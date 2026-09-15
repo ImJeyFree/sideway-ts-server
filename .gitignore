@@ -1,0 +1,35 @@
+# 빌드·배포 산출물
+build*/
+out/
+dist/
+.vs/
+sdk/bin/
+sdk/lib/
+CMakeUserPresets.json
+*.exe
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
+*.ilk
+*.user
+# 사용자 데이터·내부 조사 자료
+*.ts
+*.log
+channels*.json
+*.invalid-*
+*.tmp
+재부팅_후_작업재개.md
+01.기획.txt
+*작업일지*.md
+# 인증·개인 환경
+.env
+.env.*
+*.jks
+*.keystore
+local.properties
+.agents/
+.codex/
+Thumbs.db
+.DS_Store
