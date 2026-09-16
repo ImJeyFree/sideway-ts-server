@@ -95,6 +95,14 @@ int main(){try{
             ScanClient scanner(tuner);
             http.SetScanner(&scanner);
             Require(http.Start(), "HTTP start");
+            const auto epg=Request("GET /api/epg HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            Require(epg.find("200 OK")!=std::string::npos && epg.find("Cache-Control: no-store")!=std::string::npos,"EPG HTTP headers");
+            auto guide=nlohmann::json::parse(epg.substr(epg.find("\r\n\r\n")+4));
+            Require(guide.at("schemaVersion")==1 && guide.at("events").empty() && guide.at("channel").is_null(),"EPG idle schema");
+            Require(Request("POST /api/epg HTTP/1.1\r\nHost: localhost\r\n\r\n").find("405 Method Not Allowed")!=std::string::npos,"EPG method guard");
+            Require(Request("GET /api/epg-other HTTP/1.1\r\nHost: localhost\r\n\r\n").find("404 Not Found")!=std::string::npos,"EPG exact route");
+            Require(tuner.Command({{"op","test-epg-unavailable"}}),"mock EPG failure setup");
+            Require(Request("GET /api/epg HTTP/1.1\r\nHost: localhost\r\n\r\n").find("503 Service Unavailable")!=std::string::npos,"old DLL EPG error");
             const auto status = Request("GET /api/status HTTP/1.1\r\nHost: localhost\r\n\r\n");
             Require(status.find("200 OK") != std::string::npos &&
                 status.find("\"receiving\":false") != std::string::npos, "status response");

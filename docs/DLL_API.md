@@ -14,7 +14,7 @@ DLL은 프로세스 내 모듈이며 보안 격리 경계가 아닙니다. 비�
 | stc_api_version | 지원 API 버전 |
 | stc_create | 옵션·UTF-8 채널 파일 경로·TS 콜백으로 핸들 생성. 장치를 열지는 않음 |
 | stc_command | UTF-8 JSON 명령 실행. 성공 0 |
-| stc_query | status 또는 catalog를 UTF-8 JSON으로 조회 |
+| stc_query | status, catalog 또는 epg를 UTF-8 JSON으로 조회 |
 | stc_last_error | 해당 핸들의 마지막 오류. 생성 실패는 동일 스레드에서 null 핸들로 조회 |
 | stc_destroy | 콜백 스레드·스캔·장치를 종료하고 핸들 해제 |
 
@@ -43,6 +43,8 @@ status는 currentChannel, isClearQam, cableInput, receiving, tunerLocked, signal
 catalog는 channels, selected, scanning, state, message, completed, total, currentChannel, found, file을 제공합니다. channels 항목의 구조는 공개 `ChannelStore.h`를 참조합니다.
 
 ## 메모리·스레드·수명
+
+`epg`는 선택 채널의 편성 스냅샷을 반환하는 추가 조회 종류입니다. 응답 구조는 [EPG API](EPG_API.md)를 참조합니다. 기존 ABI v1 함수 서명은 유지하며, EPG를 지원하지 않는 이전 DLL은 이 종류에 `STC_INVALID_ARGUMENT`를 반환합니다. 서버 EXE와 새 DLL을 함께 배포해야 합니다.
 
 - 옵션의 size와 api_version을 채우고, 입력 문자열은 호출이 반환될 때까지 유지합니다. 생성 시 경로는 DLL 내부에 복사됩니다.
 - 핸들은 DLL에서 생성·파괴합니다. 호스트에서 delete하지 않습니다. STL·COM 객체를 경계로 넘기지 않습니다.

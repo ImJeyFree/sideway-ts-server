@@ -62,6 +62,7 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 | GET /api/status | 장치·수신 상태 (UDP/RTP 송출 여부 포함) |
 | GET /api/channels | 저장 방송 목록 |
 | GET /api/scan | 스캔 진행 상태 |
+| GET /api/epg | 선택 방송의 EPG·현재/다음 프로그램 JSON |
 | GET /api/udp/toggle | UDP 멀티캐스트 송출 On/Off 토글 |
 | GET /api/rtp/toggle | RTP 멀티캐스트 송출 On/Off 토글 |
 | POST /api/scan/start?input=cable&modulation=8VSB&first=2&last=135 | 검색 시작 |
@@ -70,6 +71,8 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 | POST /api/channels/stop | 방송 종료 (튜너 점유 해제) |
 
 POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 수단이 아닙니다.
+
+선택 방송의 편성은 `GET /api/epg`로 조회합니다. Player 연동 방법, JSON 필드와 수집 대기 상태는 [EPG API](docs/EPG_API.md)를 참조하세요. EPG를 지원하는 서버 EXE와 튜너 DLL을 함께 사용해야 합니다.
 
 ## 검증과 배포
 

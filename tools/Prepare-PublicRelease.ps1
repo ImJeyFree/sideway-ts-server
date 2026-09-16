@@ -16,7 +16,7 @@ $publicFiles=@(
  'include/Common.h','include/TsBroadcaster.h','include/TunerClient.h','include/ScanClient.h','include/ChannelStore.h','include/HttpStreamer.h','include/UdpStreamer.h','include/TrayApp.h','include/WebDashboard.h','include/third_party/json.hpp',
  'src/main.cpp','src/TrayApp.cpp','src/HttpStreamer.cpp','src/UdpStreamer.cpp','src/TsBroadcaster.cpp','src/TunerClient.cpp','src/ChannelStore.cpp',
  'sdk/TunerCoreApi.h','tests/StreamTests.cpp','tests/DashboardTests.js','tests/MockTunerCore.cpp','tests/LoaderTests.cpp',
- 'docs/DLL_API.md','docs/공개_배포_범위.md','docs/변경_기록.md','tools/Prepare-PublicRelease.ps1'
+ 'docs/DLL_API.md','docs/EPG_API.md','docs/공개_배포_범위.md','docs/변경_기록.md','tools/Prepare-PublicRelease.ps1'
 )
 function Copy-Relative([string]$base,[string]$relative,[string]$destination){
  $from=Join-Path $base $relative;$to=Join-Path $destination $relative
@@ -28,7 +28,7 @@ $source=Join-Path $target 'source';$runtime=Join-Path $target 'runtime';$sdk=Joi
 New-Item -ItemType Directory -Path $source,$runtime,$sdk | Out-Null
 foreach($f in $publicFiles){Copy-Relative $root $f $source}
 foreach($folder in @($runtime,$sdk)){
- foreach($f in @('LICENSE','NOTICE','BINARY_LICENSE.md','THIRD_PARTY_NOTICES.md','licenses/nlohmann-json-MIT.txt','README.md','docs/DLL_API.md','docs/공개_배포_범위.md','docs/변경_기록.md')){Copy-Relative $root $f $folder}
+ foreach($f in @('LICENSE','NOTICE','BINARY_LICENSE.md','THIRD_PARTY_NOTICES.md','licenses/nlohmann-json-MIT.txt','README.md','docs/DLL_API.md','docs/EPG_API.md','docs/공개_배포_범위.md','docs/변경_기록.md')){Copy-Relative $root $f $folder}
 }
 Copy-Item -LiteralPath $ServerExe -Destination (Join-Path $runtime 'sideway-ts-server.exe')
 Copy-Item -LiteralPath (Join-Path $SdkDirectory 'bin/SidewayTunerCore.dll') -Destination $runtime

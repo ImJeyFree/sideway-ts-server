@@ -206,6 +206,23 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
         return;
     }
     std::string firstLine = request.substr(0, request.find("\r\n"));
+    // EPG 조회는 채널을 변경하지 않는다. 선택 직후에는 collecting 상태를 반환한다.
+    const auto epgSpace=firstLine.find(' '), epgLastSpace=firstLine.rfind(' ');
+    const auto epgTarget=firstLine.substr(epgSpace+1,epgLastSpace-epgSpace-1);
+    if(epgTarget.substr(0,epgTarget.find('?'))=="/api/epg") {
+        if(firstLine.rfind("GET ",0)!=0) {
+            const std::string body="{\"error\":\"GET 요청만 지원합니다\"}";
+            SendSocket(clientSocket,"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: application/json; charset=UTF-8\r\nConnection: close\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body);
+            return;
+        }
+        try {
+            const auto body=m_tuner.Query("epg").dump();
+            SendSocket(clientSocket,"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=UTF-8\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body);
+        } catch(const std::exception&) {
+            SendError(clientSocket,503,"EPG 조회 실패: EPG를 지원하는 튜너 DLL과 수신 상태를 확인하세요");
+        }
+        return;
+    }
     if(m_scanner) {
         const auto firstSpace=firstLine.find(' '),lastSpace=firstLine.rfind(' ');
         const auto target=firstLine.substr(firstSpace+1,lastSpace-firstSpace-1);
