@@ -73,9 +73,9 @@ POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 �
 
 ## 검증과 배포
 
-- 공개 테스트는 모의 DLL을 사용하며 실제 장치를 열지 않습니다. 모의 DLL은 제품 배포물에 포함하지 않습니다.
-- CTest 회귀 테스트 중 `dashboard-regressions`는 개발 환경에 Node.js가 설치되어 있을 때 `tests/DashboardTests.js`를 실행하여 웹 대시보드 스크립트가 초기 진입 시 안전하게 동작하는지 자동 검증합니다. 실제 운영 서버(`sideway-ts-server.exe`)는 Node.js 런타임 의존성이 없는 순수 C++ 단독 실행 파일입니다.
-- `tools/Prepare-PublicRelease.ps1`은 허용된 파일만 별도 폴더로 복사하고 소스·실행·SDK 패키지 및 SHA256 목록을 만듭니다. Git commit, push, 외부 공개를 수행하지 않습니다.
-- 실제 채널 JSON·녹화물·장치 로그·디버그 심볼·비공개 소스는 배포하지 않습니다. 외부 라이선스는 [서드파티 고지](THIRD_PARTY_NOTICES.md)를 확인합니다.
-
-상세 구현 범위·검증·알려진 제약은 [변경 기록](docs/변경_기록.md)을 확인하세요.
+- **사전 빌드 바이너리 (`release/`)**: 별도 빌드 없이 바로 사용할 수 있도록 최신 실행 파일(`sideway-ts-server.exe`)과 실제 하드웨어 튜너 코어(`SidewayTunerCore.dll`), SDK 링크용(`SidewayTunerCore.lib`)이 저장소에 함께 배포됩니다.
+- **테스트 및 검증**:
+  - 공개 CTest 회귀 테스트(`stream-regressions`, `loader-missing`, `loader-version`)는 모의(Mock) DLL을 사용하여 실제 튜너 장치 없이도 API 및 전송 안정성을 검증합니다.
+  - `dashboard-regressions`는 개발 환경에 Node.js가 있을 때 웹 대시보드 스크립트의 초기 동작을 자동 검증합니다 (서버 실행 자체는 Node.js 의존성 없음).
+- **별도 아카이브 패키징**: `tools/Prepare-PublicRelease.ps1`을 사용하면 소스·실행·SDK를 버전별 독립 ZIP 아카이브 및 SHA256 해시 목록으로 로컬 패키징할 수 있습니다.
+- **보안 및 라이선스**: 실제 채널 JSON·녹화물·장치 로그·디버그 심볼·비공개 코어 소스는 저장소에 포함되지 않습니다. 바이너리 사용 조건은 [별도 바이너리 배포 조건](BINARY_LICENSE.md) 및 [서드파티 고지](THIRD_PARTY_NOTICES.md)를 따릅니다.
