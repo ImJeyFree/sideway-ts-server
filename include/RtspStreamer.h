@@ -32,6 +32,9 @@ public:
     int GetPort() const { return m_port; }
     size_t GetClientCount() const;
 
+    void SetEnabled(bool enabled);
+    bool IsEnabled() const { return m_enabled.load(); }
+
 private:
     enum class TransportMode {
         UDP_UNICAST,
@@ -75,6 +78,7 @@ private:
     SOCKET m_listenSocket = INVALID_SOCKET;
 
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_enabled{false};
     std::thread m_acceptThread;
 
     mutable std::mutex m_sessionsMutex;

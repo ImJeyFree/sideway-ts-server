@@ -7,6 +7,7 @@
 #include "HttpStreamer.h"
 #include "TrayApp.h"
 #include "ScanClient.h"
+#include "QualityConfig.h"
 #include <iostream>
 #include <windows.h>
 #include <objbase.h>
@@ -30,6 +31,7 @@ static int Run(int argc, char* argv[]) {
     SetConsoleCP(CP_UTF8);
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     std::filesystem::path channelFile=std::filesystem::path(executable).parent_path()/L"channels.json";
+    std::filesystem::path qualityFile=std::filesystem::path(executable).parent_path()/L"quality.json";
     bool forceScan=false,noScan=false;
     int wideArgc=0;auto wideArgs=CommandLineToArgvW(GetCommandLineW(),&wideArgc);
     struct ArgsGuard { LPWSTR* p; ~ArgsGuard(){if(p)LocalFree(p);} } argsGuard{wideArgs};
@@ -84,8 +86,11 @@ static int Run(int argc, char* argv[]) {
     UdpStreamer udpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_UDP_PORT);
     RtpStreamer rtpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_RTP_PORT);
     RtspStreamer rtspStreamer(broadcaster, DEFAULT_RTSP_PORT);
+    QualityStore qualityStore(qualityFile);
     HttpStreamer streamer(broadcaster, tuner, &udpStreamer, DEFAULT_SERVER_PORT);
     streamer.SetRtpStreamer(&rtpStreamer);
+    streamer.SetRtspStreamer(&rtspStreamer);
+    streamer.SetQualityStore(&qualityStore);
     ScanClient scanner(tuner);
     streamer.SetScanner(&scanner);
     bool loaded=false;
@@ -108,10 +113,11 @@ static int Run(int argc, char* argv[]) {
     }
     rtpStreamer.SetEnabled(false);
 
-    // RFC 2326 RTSP 1.0 유니캐스트/인터리빙 스트리밍 서버 가동
+    // RFC 2326 RTSP 1.0 유니캐스트/인터리빙 스트리밍 서버 가동 및 기본 정지(OFF) 설정
     if (!rtspStreamer.Start()) {
         std::cerr << "[Main] RTSP 시작 실패" << std::endl;
     }
+    rtspStreamer.SetEnabled(false);
 
     if (!streamer.Start()) {
         std::cerr << "[-] HTTP 서버 시작 실패" << std::endl;

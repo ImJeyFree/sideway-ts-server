@@ -1,7 +1,9 @@
 #include "HttpStreamer.h"
 #include "UdpStreamer.h"
 #include "RtpStreamer.h"
+#include "RtspStreamer.h"
 #include "ScanClient.h"
+#include "QualityConfig.h"
 #include "WebDashboard.h"
 #include <iostream>
 #include <sstream>
@@ -229,7 +231,10 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
         const auto queryAt=target.find('?');const auto route=target.substr(0,queryAt);
         if(route=="/api/scan" || route=="/api/channels" || route=="/api/scan/start" || route=="/api/scan/cancel" || route=="/api/channels/select" || route=="/api/channels/stop") {
             const bool readOnly=route=="/api/scan" || route=="/api/channels";
-            if((readOnly && firstLine.rfind("GET ",0)!=0) || (!readOnly && (firstLine.rfind("POST ",0)!=0 || request.find("X-TS-Action: 1")==std::string::npos))) {
+            const bool hasActionHeader = (request.find("X-TS-Action: 1") != std::string::npos) ||
+                                         (request.find("x-ts-action: 1") != std::string::npos) ||
+                                         (request.find("X-Ts-Action: 1") != std::string::npos);
+            if((readOnly && firstLine.rfind("GET ",0)!=0) || (!readOnly && (firstLine.rfind("POST ",0)!=0 || !hasActionHeader))) {
                 SendError(clientSocket,400,"작업 요청 형식 오류");return;
             }
             std::map<std::string,std::string> params;
@@ -298,6 +303,40 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
         return;
     }
 
+    // 4-2. RTSP 송출 토글 API (GET /api/rtsp/toggle)
+    if (firstLine.find("GET /api/rtsp/toggle") != std::string::npos) {
+        HandleRtspToggleApi(clientSocket, firstLine);
+        return;
+    }
+
+    // 4-3. 스트리밍/디코딩 품질 설정 조회 API (GET /api/config/quality)
+    if (firstLine.find("GET /api/config/quality") != std::string::npos) {
+        HandleGetQualityApi(clientSocket);
+        return;
+    }
+
+    // 4-4. 스트리밍/디코딩 품질 설정 저장 API (POST /api/config/quality)
+    if (firstLine.find("POST /api/config/quality") != std::string::npos) {
+        size_t headerEnd = request.find("\r\n\r\n");
+        std::string body = (headerEnd != std::string::npos) ? request.substr(headerEnd + 4) : "";
+        size_t clPos = request.find("Content-Length:");
+        if (clPos == std::string::npos) clPos = request.find("content-length:");
+        if (clPos != std::string::npos) {
+            size_t clEnd = request.find("\r\n", clPos);
+            try {
+                int cl = std::stoi(request.substr(clPos + 15, clEnd - clPos - 15));
+                while (static_cast<int>(body.size()) < cl) {
+                    char buf[1024];
+                    int r = recv(clientSocket, buf, sizeof(buf), 0);
+                    if (r <= 0) break;
+                    body.append(buf, r);
+                }
+            } catch (...) {}
+        }
+        HandlePostQualityApi(clientSocket, body);
+        return;
+    }
+
     // 5. TS 실시간 스트리밍 (GET /stream?ch=XX)
     if (firstLine.find("GET /stream") != std::string::npos) {
         int ch = m_tuner.GetCurrentChannel();
@@ -337,6 +376,8 @@ void HttpStreamer::HandleStatusApi(SOCKET clientSocket) {
     std::string udpTarget = (m_pUdpStreamer != nullptr) ? m_pUdpStreamer->GetTargetAddress() : "239.255.0.1:1234";
     bool rtpActive = (m_pRtpStreamer != nullptr) && m_pRtpStreamer->IsEnabled();
     std::string rtpTarget = (m_pRtpStreamer != nullptr) ? m_pRtpStreamer->GetTargetAddress() : "239.255.0.1:5004";
+    bool rtspActive = (m_pRtspStreamer != nullptr) && m_pRtspStreamer->IsEnabled();
+    int rtspPort = (m_pRtspStreamer != nullptr) ? m_pRtspStreamer->GetPort() : DEFAULT_RTSP_PORT;
 
     std::ostringstream json;
     json << "{"
@@ -363,7 +404,9 @@ void HttpStreamer::HandleStatusApi(SOCKET clientSocket) {
          << "\"isUdpEnabled\":" << (udpActive ? "true" : "false") << ","
          << "\"udpTarget\":\"" << udpTarget << "\","
          << "\"isRtpEnabled\":" << (rtpActive ? "true" : "false") << ","
-         << "\"rtpTarget\":\"" << rtpTarget << "\""
+         << "\"rtpTarget\":\"" << rtpTarget << "\","
+         << "\"isRtspEnabled\":" << (rtspActive ? "true" : "false") << ","
+         << "\"rtspPort\":" << rtspPort
          << "}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
 }
@@ -417,6 +460,41 @@ void HttpStreamer::HandleRtpToggleApi(SOCKET clientSocket, const std::string& re
     std::ostringstream json;
     json << "{\"success\":true,\"isRtpEnabled\":" << (newState ? "true" : "false") << "}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
+}
+
+// RFC 2326 RTSP 1.0 송출 상태 On/Off 토글 API (GET /api/rtsp/toggle)
+void HttpStreamer::HandleRtspToggleApi(SOCKET clientSocket, const std::string& request) {
+    bool newState = false;
+    if (m_pRtspStreamer) {
+        newState = !m_pRtspStreamer->IsEnabled();
+        m_pRtspStreamer->SetEnabled(newState);
+    }
+    std::ostringstream json;
+    json << "{\"success\":true,\"isRtspEnabled\":" << (newState ? "true" : "false") << "}";
+    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
+}
+
+// 스트리밍/디코딩 품질 설정 조회 API (GET /api/config/quality)
+void HttpStreamer::HandleGetQualityApi(SOCKET clientSocket) {
+    std::string jsonStr = m_pQualityStore ? m_pQualityStore->ToJsonString() : "{}";
+    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", jsonStr);
+}
+
+// 스트리밍/디코딩 품질 설정 저장 API (POST /api/config/quality)
+void HttpStreamer::HandlePostQualityApi(SOCKET clientSocket, const std::string& body) {
+    if (!m_pQualityStore) {
+        SendError(clientSocket, 500, "QualityStore 미설정");
+        return;
+    }
+    bool success = m_pQualityStore->UpdateFromJson(body);
+    if (success) {
+        std::ostringstream json;
+        json << "{\"success\":true,\"message\":\"품질 설정이 성공적으로 저장되었습니다\",\"config\":"
+             << m_pQualityStore->ToJsonString() << "}";
+        SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
+    } else {
+        SendError(clientSocket, 400, "잘못된 JSON 형식 또는 설정 저장 실패");
+    }
 }
 
 void HttpStreamer::StreamTsToClient(SOCKET clientSocket, int channel, bool isClearQam) {

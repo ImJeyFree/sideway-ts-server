@@ -477,6 +477,21 @@ inline const char* GetDashboardHtml() {
             </div>
         </div>
 
+        <!-- 4. RTSP 유니캐스트/인터리빙 스트림 -->
+        <div class="stream-card">
+            <div class="stream-header">
+                <span class="stream-type-tag tag-http" style="background:#0ea5e9;">🎥 RTSP Stream (RFC 2326 / TCP Interleaved - 안드로이드 & VLC)</span>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span id="rtspStatusText" style="font-size: 0.8rem; color: var(--accent-red);">중지됨 (OFF)</span>
+                    <button class="action-btn toggle-btn" id="rtspToggleBtn" onclick="toggleRtsp()">RTSP 시작</button>
+                </div>
+            </div>
+            <div class="stream-url-box">
+                <div class="url-text" id="streamUrlRtsp" style="user-select: all;" title="터치하여 전체 선택">rtsp://확인 중:8554/live</div>
+                <button class="action-btn" onclick="copyUrl('streamUrlRtsp', this)">주소 복사</button>
+            </div>
+        </div>
+
         <section class="guide-card">
             <h2>채널 스캔 및 방송 목록</h2>
             <p>스캔 중 방송 송출이 중단됩니다. 완료·취소 후 이전 방송으로 복귀합니다.</p>
@@ -492,6 +507,67 @@ inline const char* GetDashboardHtml() {
             <button class="action-btn" id="channelSelect" onclick="toggleSavedChannel()">선택 방송 재생</button>
         </section>
 
+        <!-- 🎛️ 스트리밍 및 디코딩 품질 설정 카드 -->
+        <section class="guide-card" style="border-left: 4px solid var(--accent-purple);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h2 style="color: var(--accent-purple); font-size: 1.15rem; font-weight: 700; margin: 0;">🎛️ 스트리밍 및 디코딩 품질 설정 (Quality Options)</h2>
+                <span style="font-size: 0.75rem; color: var(--text-secondary);">quality.json 자동 저장</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                기기 사양 및 Wi-Fi 환경에 맞춘 최적 품질 파라미터를 JSON으로 영구 관리하며, 웹과 안드로이드 앱에서 실시간 동기화합니다.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;">
+                    <span>디인터레이싱 모드</span>
+                    <select id="qualityDeinterlace" style="padding: 0.4rem; background: rgba(15, 23, 42, 0.6); color: var(--text-primary); border: 1px solid var(--card-border); border-radius: 6px;">
+                        <option value="bob">Bob (초경량 · 저사양 태블릿 권장)</option>
+                        <option value="yadif">Yadif (고화질 · PC 권장)</option>
+                        <option value="blend">Blend</option>
+                        <option value="linear">Linear</option>
+                        <option value="off">Off (끄기)</option>
+                    </select>
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;">
+                    <span>디코딩 CPU 스레드</span>
+                    <select id="qualityThreads" style="padding: 0.4rem; background: rgba(15, 23, 42, 0.6); color: var(--text-primary); border: 1px solid var(--card-border); border-radius: 6px;">
+                        <option value="4">4 스레드 (기본 권장)</option>
+                        <option value="2">2 스레드 (초저전력)</option>
+                        <option value="8">8 스레드 (고성능)</option>
+                        <option value="0">자동 (Auto)</option>
+                    </select>
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;">
+                    <span>네트워크 버퍼 캐시</span>
+                    <select id="qualityCaching" style="padding: 0.4rem; background: rgba(15, 23, 42, 0.6); color: var(--text-primary); border: 1px solid var(--card-border); border-radius: 6px;">
+                        <option value="500">500 ms (초저지연)</option>
+                        <option value="1000">1000 ms (표준 안정 권장)</option>
+                        <option value="1500">1500 ms (원거리 Wi-Fi)</option>
+                        <option value="2000">2000 ms (고신뢰도 버퍼)</option>
+                    </select>
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;">
+                    <span>RTSP 전송 방식</span>
+                    <select id="qualityRtspTransport" style="padding: 0.4rem; background: rgba(15, 23, 42, 0.6); color: var(--text-primary); border: 1px solid var(--card-border); border-radius: 6px;">
+                        <option value="tcp">TCP Interleaved (무손실 권장)</option>
+                        <option value="udp">UDP Unicast (초저지연)</option>
+                    </select>
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem;">
+                    <span>하드웨어 가속</span>
+                    <select id="qualityHwAccel" style="padding: 0.4rem; background: rgba(15, 23, 42, 0.6); color: var(--text-primary); border: 1px solid var(--card-border); border-radius: 6px;">
+                        <option value="auto">자동 (Auto 하이브리드)</option>
+                        <option value="on">강제 켜기 (Hardware Only)</option>
+                        <option value="off">소프트웨어 (Software Only)</option>
+                    </select>
+                </label>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <button class="action-btn" id="btnSaveQuality" onclick="saveQualityConfig()" style="background: #0284c7;">품질 설정 저장</button>
+                <button class="action-btn" id="btnResetQuality" onclick="resetQualityConfig()" style="background: #475569;">기본값 복원</button>
+                <span id="qualitySaveFeedback" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-green);"></span>
+            </div>
+        </section>
+
         <!-- 💡 실시간 영상 시청 가이드 -->
         <div class="guide-card">
             <div style="font-weight: 700; color: var(--accent-primary); margin-bottom: 0.5rem;">
@@ -501,13 +577,16 @@ inline const char* GetDashboardHtml() {
                 &bull; <strong>VLC 미디어 재생기</strong>: 메뉴의 [미디어] ➡️ [네트워크 스트림 열기...] (단축키 <code>Ctrl+N</code>) ➡️ 위 <strong>HTTP TS 주소 복사</strong> 클릭 후 붙여넣고 재생
             </div>
             <div style="margin-bottom: 0.35rem;">
+                &bull; <strong>RTSP 무손실/초저지연 재생</strong>: VLC 또는 안드로이드 플레이어에서 <code>rtsp://서버IP:8554/live</code> (기본 정지 상태이므로 위 버튼으로 시작 후 시청)
+            </div>
+            <div style="margin-bottom: 0.35rem;">
                 &bull; <strong>RTP 초저지연 재생 (권장)</strong>: VLC에서 <code>rtp://@239.255.0.1:5004</code> 입력 시 시퀀스 동기화로 패킷 누락 없는 고화질 시청 가능
             </div>
             <div style="margin-bottom: 0.35rem;">
                 &bull; <strong>UDP 멀티캐스트 재생</strong>: VLC에서 <code>udp://@239.255.0.1:1234</code> 입력 시 원본 초저지연 시청 가능
             </div>
             <div>
-                &bull; <strong>안드로이드 기기 시청</strong>: 동일 Wi-Fi 망의 스마트폰/태블릿에서 안드로이드 앱(ExoPlayer) 실행 시 위 HTTP TS 주소로 다이렉트 재생
+                &bull; <strong>안드로이드 기기 시청</strong>: 동일 Wi-Fi 망의 스마트폰/태블릿에서 안드로이드 전용 앱(LibVLC) 실행 시 위 주소로 원터치 재생
             </div>
         </div>
 
@@ -582,6 +661,29 @@ inline const char* GetDashboardHtml() {
                             rtpBtn.textContent = 'RTP 시작';
                             rtpTxt.textContent = '중지됨 (OFF)';
                             rtpTxt.style.color = 'var(--accent-red)';
+                        }
+                    }
+
+                    const rtspPort = data.rtspPort || 8554;
+                    const rtspUrlEl = document.getElementById('streamUrlRtsp');
+                    if (rtspUrlEl) {
+                        const hostIp = (data.serverAddress || window.location.host).split(':')[0];
+                        rtspUrlEl.textContent = 'rtsp://' + hostIp + ':' + rtspPort + '/live';
+                    }
+
+                    const rtspBtn = document.getElementById('rtspToggleBtn');
+                    const rtspTxt = document.getElementById('rtspStatusText');
+                    if (rtspBtn && rtspTxt) {
+                        if (data.isRtspEnabled) {
+                            rtspBtn.className = 'action-btn toggle-btn on';
+                            rtspBtn.textContent = 'RTSP 정지';
+                            rtspTxt.textContent = '송출 중 (ON)';
+                            rtspTxt.style.color = 'var(--accent-green)';
+                        } else {
+                            rtspBtn.className = 'action-btn toggle-btn';
+                            rtspBtn.textContent = 'RTSP 시작';
+                            rtspTxt.textContent = '중지됨 (OFF)';
+                            rtspTxt.style.color = 'var(--accent-red)';
                         }
                     }
 
@@ -695,6 +797,45 @@ inline const char* GetDashboardHtml() {
                         } else {
                             btn.className = 'action-btn toggle-btn';
                             btn.textContent = 'RTP 시작';
+                            txt.textContent = '중지됨 (OFF)';
+                            txt.style.color = 'var(--accent-red)';
+                        }
+                    }
+                })
+                .catch(() => updateStatus());
+        }
+
+        // RFC 2326 RTSP 송출 On/Off 토글 (즉각적 낙관적 UI 갱신 + API 호출)
+        function toggleRtsp() {
+            const btn = document.getElementById('rtspToggleBtn');
+            const txt = document.getElementById('rtspStatusText');
+            if (btn && txt) {
+                const isCurrentlyOn = btn.classList.contains('on');
+                if (isCurrentlyOn) {
+                    btn.className = 'action-btn toggle-btn';
+                    btn.textContent = 'RTSP 시작';
+                    txt.textContent = '중지됨 (OFF)';
+                    txt.style.color = 'var(--accent-red)';
+                } else {
+                    btn.className = 'action-btn toggle-btn on';
+                    btn.textContent = 'RTSP 정지';
+                    txt.textContent = '송출 중 (ON)';
+                    txt.style.color = 'var(--accent-green)';
+                }
+            }
+
+            fetch('/api/rtsp/toggle')
+                .then(res => { if (!res.ok) throw new Error('서버 요청 실패'); return res.json(); })
+                .then(data => {
+                    if (btn && txt) {
+                        if (data.isRtspEnabled) {
+                            btn.className = 'action-btn toggle-btn on';
+                            btn.textContent = 'RTSP 정지';
+                            txt.textContent = '송출 중 (ON)';
+                            txt.style.color = 'var(--accent-green)';
+                        } else {
+                            btn.className = 'action-btn toggle-btn';
+                            btn.textContent = 'RTSP 시작';
                             txt.textContent = '중지됨 (OFF)';
                             txt.style.color = 'var(--accent-red)';
                         }
@@ -846,6 +987,90 @@ inline const char* GetDashboardHtml() {
         function selectSavedChannel() {
             toggleSavedChannel();
         }
+
+        async function loadQualityConfig() {
+            try {
+                const res = await fetch('/api/config/quality');
+                if (!res.ok) return;
+                const config = await res.json();
+                if (config.deinterlaceMode) {
+                    const el = document.getElementById('qualityDeinterlace');
+                    if (el) el.value = config.deinterlaceMode;
+                }
+                if (config.avcodecThreads !== undefined) {
+                    const el = document.getElementById('qualityThreads');
+                    if (el) el.value = String(config.avcodecThreads);
+                }
+                if (config.networkCachingMs !== undefined) {
+                    const el = document.getElementById('qualityCaching');
+                    if (el) el.value = String(config.networkCachingMs);
+                }
+                if (config.rtspTransport) {
+                    const el = document.getElementById('qualityRtspTransport');
+                    if (el) el.value = config.rtspTransport;
+                }
+                if (config.hardwareAcceleration) {
+                    const el = document.getElementById('qualityHwAccel');
+                    if (el) el.value = config.hardwareAcceleration;
+                }
+            } catch (e) {
+                console.error("품질 설정 로드 실패:", e);
+            }
+        }
+
+        async function saveQualityConfig() {
+            const feedback = document.getElementById('qualitySaveFeedback');
+            const deintEl = document.getElementById('qualityDeinterlace');
+            const thEl = document.getElementById('qualityThreads');
+            const cacheEl = document.getElementById('qualityCaching');
+            const rtspEl = document.getElementById('qualityRtspTransport');
+            const hwEl = document.getElementById('qualityHwAccel');
+
+            const payload = {
+                deinterlaceMode: deintEl ? deintEl.value : 'bob',
+                avcodecThreads: thEl ? parseInt(thEl.value, 10) : 4,
+                networkCachingMs: cacheEl ? parseInt(cacheEl.value, 10) : 1000,
+                rtspTransport: rtspEl ? rtspEl.value : 'tcp',
+                hardwareAcceleration: hwEl ? hwEl.value : 'auto'
+            };
+
+            try {
+                const res = await fetch('/api/config/quality', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error(await res.text());
+                if (feedback) {
+                    feedback.textContent = '설정 저장 완료! ✓';
+                    feedback.style.color = 'var(--accent-green)';
+                    setTimeout(() => { feedback.textContent = ''; }, 2500);
+                }
+            } catch (e) {
+                if (feedback) {
+                    feedback.textContent = '저장 실패: ' + e.message;
+                    feedback.style.color = 'var(--accent-red)';
+                }
+            }
+        }
+
+        async function resetQualityConfig() {
+            const deintEl = document.getElementById('qualityDeinterlace');
+            const thEl = document.getElementById('qualityThreads');
+            const cacheEl = document.getElementById('qualityCaching');
+            const rtspEl = document.getElementById('qualityRtspTransport');
+            const hwEl = document.getElementById('qualityHwAccel');
+
+            if (deintEl) deintEl.value = 'bob';
+            if (thEl) thEl.value = '4';
+            if (cacheEl) cacheEl.value = '1000';
+            if (rtspEl) rtspEl.value = 'tcp';
+            if (hwEl) hwEl.value = 'auto';
+            await saveQualityConfig();
+        }
+
+        loadQualityConfig();
+
         setInterval(refreshChannels, 1000);
         refreshChannels();
 

@@ -100,6 +100,21 @@ size_t RtspStreamer::GetClientCount() const {
     return count;
 }
 
+void RtspStreamer::SetEnabled(bool enabled) {
+    m_enabled = enabled;
+    std::cout << "[RtspStreamer] RTSP 송출 상태 변경: " << (enabled ? "ON" : "OFF") << std::endl;
+    if (!enabled) {
+        std::lock_guard<std::mutex> lock(m_sessionsMutex);
+        for (auto& session : m_sessions) {
+            session->isPlaying = false;
+            session->sessionRunning = false;
+            if (session->tcpSocket != INVALID_SOCKET) {
+                shutdown(session->tcpSocket, SD_BOTH);
+            }
+        }
+    }
+}
+
 void RtspStreamer::AcceptLoop() {
     while (m_running) {
         sockaddr_in clientAddr{};
@@ -263,6 +278,14 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
 
     std::ostringstream response;
 
+    if (!m_enabled.load()) {
+        response << "RTSP/1.0 503 Service Unavailable\r\n"
+                 << "CSeq: " << cseq << "\r\n"
+                 << "Connection: close\r\n\r\n";
+        shouldClose = true;
+        return response.str();
+    }
+
     if (method == "OPTIONS") {
         response << "RTSP/1.0 200 OK\r\n"
                  << "CSeq: " << cseq << "\r\n"
@@ -379,7 +402,7 @@ void RtspStreamer::StreamLoop(std::shared_ptr<RtspClientSession> session) {
 
     auto startTime = std::chrono::steady_clock::now();
 
-    while (m_running && session->sessionRunning && session->isPlaying) {
+    while (m_running && m_enabled.load() && session->sessionRunning && session->isPlaying) {
         if (!session->subscriber || !session->subscriber->PopData(tsPayload.data(), UDP_DATAGRAM_SIZE)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;

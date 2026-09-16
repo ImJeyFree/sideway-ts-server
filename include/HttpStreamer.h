@@ -33,7 +33,9 @@ namespace HttpWire {
 
 class UdpStreamer;
 class RtpStreamer;
+class RtspStreamer;
 class ScanClient;
+class QualityStore;
 
 /**
  * @class HttpStreamer
@@ -72,6 +74,12 @@ public:
     /** @brief RTP 멀티캐스트 스트리머 등록 (웹 대시보드 제어용) */
     void SetRtpStreamer(RtpStreamer* pRtpStreamer) { m_pRtpStreamer = pRtpStreamer; }
 
+    /** @brief RTSP 스트리머 등록 (웹 대시보드 제어용) */
+    void SetRtspStreamer(RtspStreamer* pRtspStreamer) { m_pRtspStreamer = pRtspStreamer; }
+
+    /** @brief 스트리밍 및 디코딩 품질 설정 저장소 등록 */
+    void SetQualityStore(QualityStore* pQualityStore) { m_pQualityStore = pQualityStore; }
+
     /** @brief 서버 포트 번호 반환 */
     int GetPort() const { return m_port; }
 
@@ -106,6 +114,15 @@ private:
     /** @brief POST /api/rtp/toggle (RTP 송출 On/Off) API 핸들러 */
     void HandleRtpToggleApi(SOCKET clientSocket, const std::string& request);
 
+    /** @brief POST /api/rtsp/toggle (RTSP 송출 On/Off) API 핸들러 */
+    void HandleRtspToggleApi(SOCKET clientSocket, const std::string& request);
+
+    /** @brief GET /api/config/quality (품질 설정 조회) API 핸들러 */
+    void HandleGetQualityApi(SOCKET clientSocket);
+
+    /** @brief POST /api/config/quality (품질 설정 저장) API 핸들러 */
+    void HandlePostQualityApi(SOCKET clientSocket, const std::string& body);
+
     /** @brief GET /stream (MPEG-TS 실시간 바이너리 스트리밍 송출 루프) */
     void StreamTsToClient(SOCKET clientSocket, int channel, bool isClearQam = false);
 
@@ -113,7 +130,9 @@ private:
     TunerClient& m_tuner;                       ///< 튜너 클라이언트 참조
     UdpStreamer* m_pUdpStreamer = nullptr;      ///< UDP 스트리머 포인터
     RtpStreamer* m_pRtpStreamer = nullptr;      ///< RTP 스트리머 포인터
+    RtspStreamer* m_pRtspStreamer = nullptr;    ///< RTSP 스트리머 포인터
     ScanClient* m_scanner = nullptr;            ///< 스캐너 클라이언트 포인터
+    QualityStore* m_pQualityStore = nullptr;    ///< 품질 설정 저장소 포인터
     int m_port;                                 ///< HTTP 바인딩 포트
 
     SOCKET m_listenSocket = INVALID_SOCKET;     ///< HTTP 리슨 소켓 핸들

@@ -20,6 +20,12 @@ async function run(fail) {
         fetch: async (url) => {
             calls.push(url);
             if (fail) throw new Error('network failure');
+            if (url === '/api/config/quality') {
+                return { ok: true, json: async () => ({
+                    deinterlaceMode: 'bob', avcodecThreads: 4, networkCachingMs: 1000,
+                    rtspTransport: 'tcp', hardwareAcceleration: 'auto'
+                }) };
+            }
             return { ok: true, json: async () => ({
                 receiving: false, tunerLocked: false, isClearQam: true, isVirtual: false,
                 currentChannel: 15, bitrateMbps: 0, activeClients: 0, uptimeSeconds: 1,
@@ -30,13 +36,21 @@ async function run(fail) {
         }
     });
     await new Promise(setImmediate);
-    assert.deepEqual(calls, ['/api/channels', '/api/status'], '초기 진입 시 조회만 수행해야 함');
+    assert.deepEqual(calls, ['/api/config/quality', '/api/channels', '/api/status'], '초기 진입 시 조회만 수행해야 함');
     if (fail) {
         assert.equal(elements.get('tunerLockStatus').textContent, '상태 조회 실패');
         assert.equal(elements.get('streamUrlHttp').textContent, '서버 주소 확인 실패');
     } else {
         assert.equal(elements.get('tunerLockStatus').textContent, '방송 미수신');
         assert.equal(elements.get('streamUrlHttp').textContent, 'http://192.0.2.10:8080/stream');
+        assert.equal(elements.get('streamUrlRtsp').textContent, 'rtsp://192.0.2.10:8554/live');
+        assert.equal(elements.get('rtspStatusText').textContent, '중지됨 (OFF)');
+        assert.equal(elements.get('rtspToggleBtn').textContent, 'RTSP 시작');
+        assert.equal(elements.get('qualityDeinterlace').value, 'bob');
+        assert.equal(elements.get('qualityThreads').value, '4');
+        assert.equal(elements.get('qualityCaching').value, '1000');
+        assert.equal(elements.get('qualityRtspTransport').value, 'tcp');
+        assert.equal(elements.get('qualityHwAccel').value, 'auto');
         assert.equal(elements.get('tunerBadge').innerHTML, '🟡 하드웨어 튜너 미감지');
     }
 }
