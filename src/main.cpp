@@ -3,6 +3,7 @@
 #include "TunerClient.h"
 #include "UdpStreamer.h"
 #include "RtpStreamer.h"
+#include "RtspStreamer.h"
 #include "HttpStreamer.h"
 #include "TrayApp.h"
 #include "ScanClient.h"
@@ -82,6 +83,7 @@ static int Run(int argc, char* argv[]) {
     TunerClient tuner(broadcaster,channelFile);
     UdpStreamer udpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_UDP_PORT);
     RtpStreamer rtpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_RTP_PORT);
+    RtspStreamer rtspStreamer(broadcaster, DEFAULT_RTSP_PORT);
     HttpStreamer streamer(broadcaster, tuner, &udpStreamer, DEFAULT_SERVER_PORT);
     streamer.SetRtpStreamer(&rtpStreamer);
     ScanClient scanner(tuner);
@@ -106,8 +108,14 @@ static int Run(int argc, char* argv[]) {
     }
     rtpStreamer.SetEnabled(false);
 
+    // RFC 2326 RTSP 1.0 유니캐스트/인터리빙 스트리밍 서버 가동
+    if (!rtspStreamer.Start()) {
+        std::cerr << "[Main] RTSP 시작 실패" << std::endl;
+    }
+
     if (!streamer.Start()) {
         std::cerr << "[-] HTTP 서버 시작 실패" << std::endl;
+        rtspStreamer.Stop();
         rtpStreamer.Stop();
         udpStreamer.Stop();
         tuner.Stop();
@@ -132,6 +140,7 @@ static int Run(int argc, char* argv[]) {
 
     std::cout << "\n✅ 서버가 성공적으로 가동되었습니다!" << std::endl;
     std::cout << "🌐 웹 대시보드 : http://localhost:" << DEFAULT_SERVER_PORT << "/" << std::endl;
+    std::cout << "📡 RTSP 스트림 : rtsp://localhost:" << DEFAULT_RTSP_PORT << "/live" << std::endl;
     std::cout << "📱 안드로이드: 대시보드의 서버 LAN 주소를 사용하세요." << std::endl;
     std::cout << "💡 작업표시줄 시스템 트레이에 아이콘이 상주합니다. (종료: Ctrl+C 또는 트레이 우클릭 Exit)\n" << std::endl;
 
@@ -142,6 +151,7 @@ static int Run(int argc, char* argv[]) {
     // 7. 자원 정리
     streamer.Stop();
     scanner.Shutdown();
+    rtspStreamer.Stop();
     rtpStreamer.Stop();
     udpStreamer.Stop();
     tuner.Stop();

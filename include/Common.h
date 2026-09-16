@@ -45,6 +45,11 @@ constexpr int DEFAULT_RTP_PORT = 5004;                                 ///< 표�
 constexpr uint8_t RTP_PAYLOAD_TYPE_MP2T = 33;                          ///< RFC 3551 Payload Type 33 (MPEG-2 TS)
 
 /**
+ * @brief RTSP 스트리밍 규격 상수 (RFC 2326)
+ */
+constexpr int DEFAULT_RTSP_PORT = 8554;                                ///< RTSP 스트리밍 기본 포트
+
+/**
  * @struct ServerStats
  * @brief 전체 방송 서버 및 BDA TV 튜너 하드웨어의 실시간 상태 정보 구조체
  */
