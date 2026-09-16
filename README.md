@@ -9,6 +9,7 @@ Windows USB TV 튜너에서 수신한 방송을 HTTP와 UDP 멀티캐스트로 �
 
 - 공개: 실행 옵션·웹 UI·HTTP/UDP 전송·구독자 버퍼·채널 JSON 형식·DLL 어댑터·모의 테스트.
 - 비공개 DLL: BDA 장치 제어·스캔·방송 테이블 분석·선택 서비스 구성·장치 호환성 처리.
+- 배포 바이너리 (`release/`): 즉시 실행 가능한 `sideway-ts-server.exe`, 실제 하드웨어 튜너 코어 `SidewayTunerCore.dll`, 빌드용 `SidewayTunerCore.lib`. 별도 빌드 없이 바로 실행할 수 있습니다.
 - SDK 규격: [DLL API](docs/DLL_API.md), [공개 및 배포 범위](docs/공개_배포_범위.md).
 
 ## 빌드
@@ -25,11 +26,16 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 
 ## 실행
 
+사전 빌드된 `release` 폴더의 바이너리를 사용하거나 직접 빌드한 실행 파일을 실행합니다.
+
 ```powershell
-.\build\Release\sideway-ts-server.exe
-.\build\Release\sideway-ts-server.exe --scan
-.\build\Release\sideway-ts-server.exe --no-scan
-.\build\Release\sideway-ts-server.exe --channels C:/TV/channels.json
+# [사전 빌드 바이너리 바로 실행 - 권장]
+.\release\sideway-ts-server.exe
+
+# 옵션 사용 예시
+.\release\sideway-ts-server.exe --scan
+.\release\sideway-ts-server.exe --no-scan
+.\release\sideway-ts-server.exe --channels C:/TV/channels.json
 ```
 
 - 실행 파일 옆 `channels.json`에 방송 목록·마지막 선택을 저장합니다. 없거나 비어 있으면 자동 스캔합니다.

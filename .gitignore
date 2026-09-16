@@ -9,6 +9,10 @@ CMakeUserPresets.json
 *.exe
 *.dll
 *.lib
+!release/
+!release/*.exe
+!release/*.dll
+!release/*.lib
 *.exp
 *.obj
 *.pdb
