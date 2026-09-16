@@ -38,7 +38,8 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 - 웹 대시보드: http://localhost:8080/
 - 웹 대시보드의 **`[선택 방송 재생] ↔ [방송 종료]`** 버튼으로 실시간 방송 수신을 토글할 수 있습니다. 방송 종료 시 튜너 장치 점유를 완전히 해제하여 다른 프로그램과의 충돌을 방지합니다.
 - HTTP 스트림: http://localhost:8080/stream
-- UDP 스트림: `udp://@239.255.0.1:1234`
+- UDP 스트림: `udp://@239.255.0.1:1234` (기본 정지/OFF 상태, 웹 대시보드 또는 API로 켤 수 있음)
+- RTP 스트림: `rtp://@239.255.0.1:5004` (기본 정지/OFF 상태, RFC 2250 / RFC 3550 기반 패킷 동기화 스트리밍, VLC 플레이어 권장)
 - 다른 기기에서는 localhost 대신 서버 PC의 LAN IP를 사용합니다.
 - 스캔 중 시청이 중단됩니다. 완료·취소 후 이전 방송으로 복귀하며 플레이어 재연결이 필요할 수 있습니다.
 - 취소·빈 결과로 기존 JSON을 덮어쓰지 않습니다. 부분 스캔은 범위 밖 방송을 보존합니다.
@@ -50,9 +51,11 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 
 | 요청 | 기능 |
 |---|---|
-| GET /api/status | 장치·수신 상태 |
+| GET /api/status | 장치·수신 상태 (UDP/RTP 송출 여부 포함) |
 | GET /api/channels | 저장 방송 목록 |
 | GET /api/scan | 스캔 진행 상태 |
+| GET /api/udp/toggle | UDP 멀티캐스트 송출 On/Off 토글 |
+| GET /api/rtp/toggle | RTP 멀티캐스트 송출 On/Off 토글 |
 | POST /api/scan/start?input=cable&modulation=8VSB&first=2&last=135 | 검색 시작 |
 | POST /api/scan/cancel | 검색 취소 |
 | POST /api/channels/select?id=방송ID | 방송 선택 및 재생 시작 |

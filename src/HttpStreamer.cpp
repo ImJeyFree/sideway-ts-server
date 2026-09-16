@@ -1,5 +1,6 @@
 #include "HttpStreamer.h"
 #include "UdpStreamer.h"
+#include "RtpStreamer.h"
 #include "ScanClient.h"
 #include "WebDashboard.h"
 #include <iostream>
@@ -274,6 +275,12 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
         return;
     }
 
+    // 4-1. RTP 송출 토글 API (GET /api/rtp/toggle)
+    if (firstLine.find("GET /api/rtp/toggle") != std::string::npos) {
+        HandleRtpToggleApi(clientSocket, firstLine);
+        return;
+    }
+
     // 5. TS 실시간 스트리밍 (GET /stream?ch=XX)
     if (firstLine.find("GET /stream") != std::string::npos) {
         int ch = m_tuner.GetCurrentChannel();
@@ -311,6 +318,8 @@ void HttpStreamer::SendHttpResponse(SOCKET clientSocket, const std::string& cont
 void HttpStreamer::HandleStatusApi(SOCKET clientSocket) {
     bool udpActive = (m_pUdpStreamer != nullptr) && m_pUdpStreamer->IsEnabled();
     std::string udpTarget = (m_pUdpStreamer != nullptr) ? m_pUdpStreamer->GetTargetAddress() : "239.255.0.1:1234";
+    bool rtpActive = (m_pRtpStreamer != nullptr) && m_pRtpStreamer->IsEnabled();
+    std::string rtpTarget = (m_pRtpStreamer != nullptr) ? m_pRtpStreamer->GetTargetAddress() : "239.255.0.1:5004";
 
     std::ostringstream json;
     json << "{"
@@ -335,7 +344,9 @@ void HttpStreamer::HandleStatusApi(SOCKET clientSocket) {
          << "\"bitrateMbps\":" << GetCurrentBitrateMbps() << ","
          << "\"uptimeSeconds\":" << GetUptimeSeconds() << ","
          << "\"isUdpEnabled\":" << (udpActive ? "true" : "false") << ","
-         << "\"udpTarget\":\"" << udpTarget << "\""
+         << "\"udpTarget\":\"" << udpTarget << "\","
+         << "\"isRtpEnabled\":" << (rtpActive ? "true" : "false") << ","
+         << "\"rtpTarget\":\"" << rtpTarget << "\""
          << "}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
 }
@@ -361,12 +372,13 @@ void HttpStreamer::HandleTuneApi(SOCKET clientSocket, const std::string& request
     m_isBroadcasting = true;
 
     std::ostringstream json;
-    json << "{\"success\":true,\"tunedChannel\":" << targetCh
+    json << "{\"success\":true,\"tunedChannel\":" << targetCh 
          << ",\"isClearQam\":" << (isClearQam ? "true" : "false")
          << ",\"modulation\":\"" << (isClearQam ? "Clear QAM 256" : "ATSC 8VSB") << "\"}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
 }
 
+// UDP 멀티캐스트 송출 상태 On/Off 토글 API (GET /api/udp/toggle)
 void HttpStreamer::HandleUdpToggleApi(SOCKET clientSocket, const std::string& request) {
     bool newState = false;
     if (m_pUdpStreamer) {
@@ -375,6 +387,18 @@ void HttpStreamer::HandleUdpToggleApi(SOCKET clientSocket, const std::string& re
     }
     std::ostringstream json;
     json << "{\"success\":true,\"isUdpEnabled\":" << (newState ? "true" : "false") << "}";
+    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
+}
+
+// RFC 2250 RTP 멀티캐스트 송출 상태 On/Off 토글 API (GET /api/rtp/toggle)
+void HttpStreamer::HandleRtpToggleApi(SOCKET clientSocket, const std::string& request) {
+    bool newState = false;
+    if (m_pRtpStreamer) {
+        newState = !m_pRtpStreamer->IsEnabled();
+        m_pRtpStreamer->SetEnabled(newState);
+    }
+    std::ostringstream json;
+    json << "{\"success\":true,\"isRtpEnabled\":" << (newState ? "true" : "false") << "}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
 }
 

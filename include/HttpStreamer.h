@@ -19,6 +19,7 @@ bool SendAll(const char* data, size_t size, const std::function<int(const char*,
 }
 
 class UdpStreamer;
+class RtpStreamer;
 class ScanClient;
 
 class HttpStreamer {
@@ -29,6 +30,8 @@ public:
     bool Start();
     void Stop();
     void SetScanner(ScanClient* scanner) { m_scanner=scanner; }
+    // RTP 멀티캐스트 스트리머 주입 (웹 대시보드 상태 노출 및 On/Off 토글용)
+    void SetRtpStreamer(RtpStreamer* pRtpStreamer) { m_pRtpStreamer = pRtpStreamer; }
 
     int GetPort() const { return m_port; }
     size_t GetActiveClients() const { return m_activeClients; }
@@ -43,11 +46,13 @@ private:
     void HandleStatusApi(SOCKET clientSocket);
     void HandleTuneApi(SOCKET clientSocket, const std::string& request);
     void HandleUdpToggleApi(SOCKET clientSocket, const std::string& request);
+    void HandleRtpToggleApi(SOCKET clientSocket, const std::string& request); // GET /api/rtp/toggle 핸들러
     void StreamTsToClient(SOCKET clientSocket, int channel, bool isClearQam = false);
 
     TsBroadcaster& m_broadcaster;
     TunerClient& m_tuner;
     UdpStreamer* m_pUdpStreamer = nullptr;
+    RtpStreamer* m_pRtpStreamer = nullptr;
     ScanClient* m_scanner = nullptr;
     int m_port;
 

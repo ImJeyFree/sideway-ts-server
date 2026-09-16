@@ -20,6 +20,15 @@ constexpr size_t UDP_DATAGRAM_SIZE = TS_PACKET_SIZE * UDP_TS_PACKETS; // 1316 �
 constexpr int DEFAULT_UDP_PORT = 1234;
 inline const char* DEFAULT_UDP_MULTICAST_ADDR = "239.255.0.1";
 
+// RTP 스트리밍 규격 상수 (RFC 3550 / RFC 2250)
+// - RTP 고정 헤더: 12 바이트 (V=2, PT=33 MP2T, Sequence, Timestamp, SSRC)
+// - 페이로드: 188바이트 TS 패킷 7개 (1316 바이트)
+// - 전체 데이터그램 크기: 1328 바이트 (이더넷 MTU 1500 이내로 IP 단편화 방지)
+constexpr size_t RTP_HEADER_SIZE = 12;
+constexpr size_t RTP_DATAGRAM_SIZE = RTP_HEADER_SIZE + UDP_DATAGRAM_SIZE; // 1328 바이트
+constexpr int DEFAULT_RTP_PORT = 5004;                                    // 표준 RTP 기본 포트
+constexpr uint8_t RTP_PAYLOAD_TYPE_MP2T = 33;                             // RFC 3551 Payload Type 33 (MPEG-2 TS)
+
 // 서버 및 튜너 상태 구조체
 struct ServerStats {
     bool tunerLocked = false;

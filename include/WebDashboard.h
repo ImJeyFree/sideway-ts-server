@@ -462,6 +462,21 @@ inline const char* GetDashboardHtml() {
             </div>
         </div>
 
+        <!-- 3. RTP 멀티캐스트 스트림 -->
+        <div class="stream-card">
+            <div class="stream-header">
+                <span class="stream-type-tag tag-udp" style="background:#8b5cf6;">🚀 RTP Multicast (RFC 2250 패킷 동기화 - VLC 권장)</span>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span id="rtpStatusText" style="font-size: 0.8rem; color: var(--accent-green);">송출 중 (ON)</span>
+                    <button class="action-btn toggle-btn on" id="rtpToggleBtn" onclick="toggleRtp()">RTP On/Off</button>
+                </div>
+            </div>
+            <div class="stream-url-box">
+                <div class="url-text" id="streamUrlRtp" style="user-select: all;" title="터치하여 전체 선택">rtp://@239.255.0.1:5004</div>
+                <button class="action-btn" onclick="copyUrl('streamUrlRtp', this)">주소 복사</button>
+            </div>
+        </div>
+
         <section class="guide-card">
             <h2>채널 스캔 및 방송 목록</h2>
             <p>스캔 중 방송 송출이 중단됩니다. 완료·취소 후 이전 방송으로 복귀합니다.</p>
@@ -486,7 +501,10 @@ inline const char* GetDashboardHtml() {
                 &bull; <strong>VLC 미디어 재생기</strong>: 메뉴의 [미디어] ➡️ [네트워크 스트림 열기...] (단축키 <code>Ctrl+N</code>) ➡️ 위 <strong>HTTP TS 주소 복사</strong> 클릭 후 붙여넣고 재생
             </div>
             <div style="margin-bottom: 0.35rem;">
-                &bull; <strong>UDP 멀티캐스트 재생</strong>: VLC에서 <code>udp://@239.255.0.1:1234</code> 입력 시 초저지연 무손실 시청 가능
+                &bull; <strong>RTP 초저지연 재생 (권장)</strong>: VLC에서 <code>rtp://@239.255.0.1:5004</code> 입력 시 시퀀스 동기화로 패킷 누락 없는 고화질 시청 가능
+            </div>
+            <div style="margin-bottom: 0.35rem;">
+                &bull; <strong>UDP 멀티캐스트 재생</strong>: VLC에서 <code>udp://@239.255.0.1:1234</code> 입력 시 원본 초저지연 시청 가능
             </div>
             <div>
                 &bull; <strong>안드로이드 기기 시청</strong>: 동일 Wi-Fi 망의 스마트폰/태블릿에서 안드로이드 앱(ExoPlayer) 실행 시 위 HTTP TS 주소로 다이렉트 재생
@@ -545,6 +563,25 @@ inline const char* GetDashboardHtml() {
                             udpBtn.textContent = 'UDP 시작';
                             udpTxt.textContent = '중지됨 (OFF)';
                             udpTxt.style.color = 'var(--accent-red)';
+                        }
+                    }
+
+                    const rtpUrlEl = document.getElementById('streamUrlRtp');
+                    if (rtpUrlEl) rtpUrlEl.textContent = 'rtp://@' + (data.rtpTarget || '239.255.0.1:5004');
+
+                    const rtpBtn = document.getElementById('rtpToggleBtn');
+                    const rtpTxt = document.getElementById('rtpStatusText');
+                    if (rtpBtn && rtpTxt) {
+                        if (data.isRtpEnabled) {
+                            rtpBtn.className = 'action-btn toggle-btn on';
+                            rtpBtn.textContent = 'RTP 정지';
+                            rtpTxt.textContent = '송출 중 (ON)';
+                            rtpTxt.style.color = 'var(--accent-green)';
+                        } else {
+                            rtpBtn.className = 'action-btn toggle-btn';
+                            rtpBtn.textContent = 'RTP 시작';
+                            rtpTxt.textContent = '중지됨 (OFF)';
+                            rtpTxt.style.color = 'var(--accent-red)';
                         }
                     }
 
@@ -619,6 +656,45 @@ inline const char* GetDashboardHtml() {
                         } else {
                             btn.className = 'action-btn toggle-btn';
                             btn.textContent = 'UDP 시작';
+                            txt.textContent = '중지됨 (OFF)';
+                            txt.style.color = 'var(--accent-red)';
+                        }
+                    }
+                })
+                .catch(() => updateStatus());
+        }
+
+        // RFC 2250 RTP 멀티캐스트 송출 On/Off 토글 (즉각적 낙관적 UI 갱신 + API 호출)
+        function toggleRtp() {
+            const btn = document.getElementById('rtpToggleBtn');
+            const txt = document.getElementById('rtpStatusText');
+            if (btn && txt) {
+                const isCurrentlyOn = btn.classList.contains('on');
+                if (isCurrentlyOn) {
+                    btn.className = 'action-btn toggle-btn';
+                    btn.textContent = 'RTP 시작';
+                    txt.textContent = '중지됨 (OFF)';
+                    txt.style.color = 'var(--accent-red)';
+                } else {
+                    btn.className = 'action-btn toggle-btn on';
+                    btn.textContent = 'RTP 정지';
+                    txt.textContent = '송출 중 (ON)';
+                    txt.style.color = 'var(--accent-green)';
+                }
+            }
+
+            fetch('/api/rtp/toggle')
+                .then(res => { if (!res.ok) throw new Error('서버 요청 실패'); return res.json(); })
+                .then(data => {
+                    if (btn && txt) {
+                        if (data.isRtpEnabled) {
+                            btn.className = 'action-btn toggle-btn on';
+                            btn.textContent = 'RTP 정지';
+                            txt.textContent = '송출 중 (ON)';
+                            txt.style.color = 'var(--accent-green)';
+                        } else {
+                            btn.className = 'action-btn toggle-btn';
+                            btn.textContent = 'RTP 시작';
                             txt.textContent = '중지됨 (OFF)';
                             txt.style.color = 'var(--accent-red)';
                         }

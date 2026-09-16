@@ -2,6 +2,7 @@
 #include "TsBroadcaster.h"
 #include "TunerClient.h"
 #include "UdpStreamer.h"
+#include "RtpStreamer.h"
 #include "HttpStreamer.h"
 #include "TrayApp.h"
 #include "ScanClient.h"
@@ -80,23 +81,34 @@ static int Run(int argc, char* argv[]) {
     TsBroadcaster broadcaster;
     TunerClient tuner(broadcaster,channelFile);
     UdpStreamer udpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_UDP_PORT);
+    RtpStreamer rtpStreamer(broadcaster, DEFAULT_UDP_MULTICAST_ADDR, DEFAULT_RTP_PORT);
     HttpStreamer streamer(broadcaster, tuner, &udpStreamer, DEFAULT_SERVER_PORT);
+    streamer.SetRtpStreamer(&rtpStreamer);
     ScanClient scanner(tuner);
     streamer.SetScanner(&scanner);
     bool loaded=false;
     try{loaded=scanner.Load();}catch(const std::exception& e){std::cerr<<"채널 파일 읽기 실패: "<<e.what()<<std::endl;return 1;}
 
-    // 4. 튜너 및 듀얼 스트리밍 엔진 시작
+    // 4. 튜너 및 멀티캐스트/HTTP 스트리밍 엔진 시작
     if (!tuner.Initialize()) {
         std::cerr << "[-] 튜너 초기화 실패" << std::endl;
     }
+    // UDP 멀티캐스트 스트리머 가동 및 기본 정지(OFF) 설정 (대역폭 낭비 방지, 대시보드에서 켤 수 있음)
     if (!udpStreamer.Start()) {
         std::cerr << "[Main] UDP 시작 실패" << std::endl;
         return 1;
     }
+    udpStreamer.SetEnabled(false);
+
+    // RFC 2250 RTP 멀티캐스트 스트리머 가동 및 기본 정지(OFF) 설정
+    if (!rtpStreamer.Start()) {
+        std::cerr << "[Main] RTP 시작 실패" << std::endl;
+    }
+    rtpStreamer.SetEnabled(false);
 
     if (!streamer.Start()) {
         std::cerr << "[-] HTTP 서버 시작 실패" << std::endl;
+        rtpStreamer.Stop();
         udpStreamer.Stop();
         tuner.Stop();
         return 1;
@@ -130,6 +142,7 @@ static int Run(int argc, char* argv[]) {
     // 7. 자원 정리
     streamer.Stop();
     scanner.Shutdown();
+    rtpStreamer.Stop();
     udpStreamer.Stop();
     tuner.Stop();
 
