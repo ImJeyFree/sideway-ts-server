@@ -5,6 +5,8 @@ Windows USB TV 튜너에서 수신한 방송을 HTTP와 UDP 멀티캐스트로 �
 
 공개 서버 코드·SDK API 헤더는 Apache-2.0([LICENSE](LICENSE))입니다. 비공개 DLL·import LIB는 [별도 바이너리 배포 조건](BINARY_LICENSE.md)을 적용합니다. 서드파티 코드는 원래 라이선스를 따릅니다.
 
+개인 블로그 : https://side-ways.tistory.com/5, https://blog.naver.com/ibook/224413425060
+
 ## 구성
 
 - 공개: 실행 옵션·웹 UI·HTTP/UDP 전송·구독자 버퍼·채널 JSON 형식·DLL 어댑터·모의 테스트.
