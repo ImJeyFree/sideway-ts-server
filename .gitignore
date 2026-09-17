@@ -2,10 +2,13 @@
 build*/
 out/
 dist/
+docs/
 .vs/
 sdk/bin/
 sdk/lib/
 CMakeUserPresets.json
+*.md
+!README.md
 *.exe
 *.dll
 *.lib
