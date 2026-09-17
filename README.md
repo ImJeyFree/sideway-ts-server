@@ -14,6 +14,36 @@ Windows USB TV 튜너에서 수신한 방송을 HTTP와 UDP 멀티캐스트로 �
 - 배포 바이너리 (`release/`): 즉시 실행 가능한 `sideway-ts-server.exe`, 실제 하드웨어 튜너 코어 `SidewayTunerCore.dll`, 빌드용 `SidewayTunerCore.lib`. 별도 빌드 없이 바로 실행할 수 있습니다.
 - SDK 규격: [DLL API](docs/DLL_API.md), [공개 및 배포 범위](docs/공개_배포_범위.md).
 
+## 프로젝트 디렉토리 구조
+
+```text
+C:\ws\ts\server
+├── README.md                                   # 서버 사양, 웹 대시보드, 빌드/실행 및 REST API 문서
+├── CMakeLists.txt / CMakePresets.json          # C++20 / MSVC / CMake 빌드 환경 설정
+├── .env / .env.example                         # 서버 환경 설정 파일
+├── LICENSE / BINARY_LICENSE.md                 # 공개 소스(Apache-2.0) 및 비공개 코어 DLL 배포 조건
+├── docs/                                       # 상세 모듈 사양 및 변경 기록 문서
+│   ├── 변경_기록.md                             # RTSP 동적 토글 및 품질 설정 연동 기록
+│   ├── DLL_API.md                              # BDA 튜너 코어 SDK API 규격
+│   ├── EPG_API.md                              # 실시간 EPG REST API 가이드
+│   └── 공개_배포_범위.md                        # 오픈소스 및 비공개 라이브러리 범위
+├── include/                                    # C++ 헤더 파일
+│   ├── HttpStreamer.h                          # HTTP TS 스트리머 및 REST API 핸들러
+│   ├── RtspStreamer.h                          # RFC 2326 / RFC 3550 RTSP 스트리머 (TCP Interleaved)
+│   ├── QualityConfig.h                         # 디코딩/스트리밍 품질 동적 설정 모델
+│   └── WebDashboard.h                          # 웹 대시보드 HTML/JS 및 동적 상태 제어
+├── src/                                        # C++ 구현 파일
+│   ├── HttpStreamer.cpp                        # HTTP/REST API 서버 및 세션 관리
+│   ├── RtspStreamer.cpp                        # RTSP 상태 머신 및 TCP/UDP RTP 송출
+│   └── main.cpp                                # 서버 진입점 및 서비스 초기화
+├── release/                                    # 즉시 실행 가능한 사전 빌드 바이너리
+│   ├── sideway-ts-server.exe                   # 최신 서버 실행 파일 (381 KB)
+│   ├── SidewayTunerCore.dll                    # 실제 하드웨어 BDA 튜너 제어 코어 DLL
+│   └── SidewayTunerCore.lib                    # SDK 링크 라이브러리
+└── tests/                                      # CTest 및 Node.js 대시보드 회귀 테스트
+    └── DashboardTests.js                       # 대시보드 UI/REST API 자동 검증 스크립트
+```
+
 ## 빌드
 
 Windows x64, Visual Studio C++ 도구, Windows SDK, CMake 3.20 이상이 필요합니다. 웹 테스트에는 Node.js를 사용합니다.
@@ -65,6 +95,7 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 | GET /api/epg | 선택 방송의 EPG·현재/다음 프로그램 JSON |
 | GET /api/udp/toggle | UDP 멀티캐스트 송출 On/Off 토글 |
 | GET /api/rtp/toggle | RTP 멀티캐스트 송출 On/Off 토글 |
+| GET /api/rtsp/toggle | RTSP 스트림 송출 On/Off 토글 |
 | POST /api/scan/start?input=cable&modulation=8VSB&first=2&last=135 | 검색 시작 |
 | POST /api/scan/cancel | 검색 취소 |
 | POST /api/channels/select?id=방송ID | 방송 선택 및 재생 시작 |
@@ -73,37 +104,6 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 수단이 아닙니다.
 
 선택 방송의 편성은 `GET /api/epg`로 조회합니다. Player 연동 방법, JSON 필드와 수집 대기 상태는 [EPG API](docs/EPG_API.md)를 참조하세요. EPG를 지원하는 서버 EXE와 튜너 DLL을 함께 사용해야 합니다.
-
-
-
-C:\ws\ts\server
-├── README.md                                   # 서버 사양, 웹 대시보드, 빌드/실행 및 REST API 문서
-├── CMakeLists.txt / CMakePresets.json          # C++20 / MSVC / CMake 빌드 환경 설정
-├── .env / .env.example                         # 서버 환경 설정 파일
-├── LICENSE / BINARY_LICENSE.md                 # 공개 소스(Apache-2.0) 및 비공개 코어 DLL 배포 조건
-├── docs/                                       # 상세 모듈 사양 및 변경 기록 문서
-│   ├── 변경_기록.md                             # RTSP 동적 토글 및 품질 설정 연동 기록
-│   ├── DLL_API.md                              # BDA 튜너 코어 SDK API 규격
-│   ├── EPG_API.md                              # 실시간 EPG REST API 가이드
-│   └── 공개_배포_범위.md                        # 오픈소스 및 비공개 라이브러리 범위
-├── include/                                    # C++ 헤더 파일
-│   ├── HttpStreamer.h                          # HTTP TS 스트리머 및 REST API 핸들러
-│   ├── RtspStreamer.h                          # RFC 2326 / RFC 3550 RTSP 스트리머 (TCP Interleaved)
-│   ├── QualityConfig.h                         # 디코딩/스트리밍 품질 동적 설정 모델
-│   └── WebDashboard.h                          # 웹 대시보드 HTML/JS 및 동적 상태 제어
-├── src/                                        # C++ 구현 파일
-│   ├── HttpStreamer.cpp                        # HTTP/REST API 서버 및 세션 관리
-│   ├── RtspStreamer.cpp                        # RTSP 상태 머신 및 TCP/UDP RTP 송출
-│   └── main.cpp                                # 서버 진입점 및 서비스 초기화
-├── release/                                    # 즉시 실행 가능한 사전 빌드 바이너리
-│   ├── sideway-ts-server.exe                   # 최신 서버 실행 파일 (381 KB)
-│   ├── SidewayTunerCore.dll                    # 실제 하드웨어 BDA 튜너 제어 코어 DLL
-│   └── SidewayTunerCore.lib                    # SDK 링크 라이브러리
-└── tests/                                      # CTest 및 Node.js 대시보드 회귀 테스트
-    └── DashboardTests.js                       # 대시보드 UI/REST API 자동 검증 스크립트
-
-
-
 
 ## 검증과 배포
 
@@ -115,3 +115,7 @@ C:\ws\ts\server
 - **보안 및 라이선스**: 실제 채널 JSON·녹화물·장치 로그·디버그 심볼·비공개 코어 소스는 저장소에 포함되지 않습니다. 바이너리 사용 조건은 [별도 바이너리 배포 조건](BINARY_LICENSE.md) 및 [서드파티 고지](THIRD_PARTY_NOTICES.md)를 따릅니다.
 
 상세 구현 범위·검증·알려진 제약은 [변경 기록](docs/변경_기록.md)을 확인하세요.
+
+#WindowsBDA #DirectShow #SidewayTSServer #RTSP #MPEG2 #HDTV #TVTuner #MPEG2TS #WebDashboard #RestAPI
+
+WindowsBDA, DirectShow, SidewayTSServer, RTSP, MPEG2, HDTV, TVTuner, MPEG2TS, WebDashboard, RestAPI
