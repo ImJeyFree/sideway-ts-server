@@ -1,4 +1,4 @@
-# Sideway TS Server
+# Sideway TS(Transport Stream) Server
 
 Windows USB TV 튜너에서 수신한 방송을 HTTP와 UDP 멀티캐스트로 전달하는 서버입니다.
 공개 서버 소스와 별도 배포되는 비공개 `SidewayTunerCore.dll`로 구성합니다. 전체 제품이 오픈소스인 것은 아닙니다.
