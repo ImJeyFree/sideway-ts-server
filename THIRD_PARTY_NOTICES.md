@@ -8,6 +8,13 @@
 - 원본 헤더의 개별 저작권·라이선스 표기를 삭제하지 않습니다.
 - 원본 헤더의 저작권자: Niels Lohmann(2013–2023), Björn Hoehrmann(2008–2009), Florian Loitsch(2009), Evan Nemerson(2016–2021), The Abseil Authors(2018). 모두 원본의 MIT 표기를 보존합니다.
 
+## CCExtractor
+
+- 원본: https://github.com/CCExtractor/ccextractor
+- 라이선스: GNU General Public License v2.0 (GPL-2.0-or-later)
+- 저작권: Copyright (c) 2007- Carlos Fernandez Sanz, Volker Quetschke, and CCExtractor contributors
+- 참조 내용: CEA-708 DTVCC 패킷 조립, 서비스 블록 해석 구조 및 C1 제어 명령어 파라미터 길이 테이블 사양을 참조하여 구현되었습니다.
+
 ## Windows 구성요소
 
 Windows API·BDA·DirectShow·Winsock은 설치된 운영체제와 장치 드라이버를 사용합니다. Windows DLL·드라이버 설치 프로그램·VLC·FFmpeg를 이 패키지에 포함하지 않습니다.

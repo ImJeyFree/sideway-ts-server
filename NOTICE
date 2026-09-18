@@ -3,4 +3,4 @@ Copyright 2026 Sideway TS Server contributors
 
 공개 서버 코드와 SDK API 헤더는 Apache License 2.0을 따릅니다.
 별도 제공되는 SidewayTunerCore.dll 및 import LIB에는 BINARY_LICENSE.md가 적용됩니다.
-nlohmann/json 등 서드파티 구성요소는 THIRD_PARTY_NOTICES.md와 해당 원본 라이선스를 따릅니다.
+nlohmann/json, CCExtractor 등 서드파티 구성요소는 THIRD_PARTY_NOTICES.md와 해당 원본 라이선스를 따릅니다.
