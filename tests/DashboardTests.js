@@ -36,7 +36,7 @@ async function run(fail) {
         }
     });
     await new Promise(setImmediate);
-    assert.deepEqual(calls, ['/api/config/quality', '/api/channels', '/api/status'], '초기 진입 시 조회만 수행해야 함');
+    assert.deepEqual(calls, ['/api/config/quality', '/api/config/quality/status', '/api/channels', '/api/status'], '초기 진입 시 조회만 수행해야 함');
     if (fail) {
         assert.equal(elements.get('tunerLockStatus').textContent, '상태 조회 실패');
         assert.equal(elements.get('streamUrlHttp').textContent, '서버 주소 확인 실패');

@@ -1,6 +1,7 @@
 #include "HttpStreamer.h"
 #include "ScanClient.h"
 #include "UdpStreamer.h"
+#include "QualityConfig.h"
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
@@ -90,7 +91,11 @@ int main(){try{
             TunerClient tuner(liveHub,"unused.json"); // 하드웨어를 열지 않는 HTTP 검증
             Require(!tuner.Start(), "uninitialized graph was started");
             Require(!tuner.IsReceiving() && tuner.GetHardwareBytes() == 0, "false hardware success");
-            HttpStreamer http(liveHub, tuner, nullptr, 18080);
+            UdpStreamer controlledUdp(liveHub,"127.0.0.1",1234);
+            auto qualityPath=std::filesystem::temp_directory_path()/("sideway-http-quality-"+std::to_string(GetCurrentProcessId())+".json");
+            QualityStore quality(qualityPath);
+            HttpStreamer http(liveHub, tuner, &controlledUdp, 18080);
+            http.SetQualityStore(&quality);
             UdpStreamer scanUdp(liveHub,"239.255.0.1",1234);
             ScanClient scanner(tuner);
             http.SetScanner(&scanner);
@@ -110,12 +115,24 @@ int main(){try{
                 "invalid channel response");
             Require(Request("GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n").find("503 Service Unavailable") != std::string::npos,
                 "no tuner response");
-            Require(Request("GET /api/tune?ch=159 HTTP/1.1\r\nHost: localhost\r\n\r\n").find("400 Bad Request") != std::string::npos,
+            Require(Request("POST /api/tune?ch=159 HTTP/1.1\r\nHost: localhost\r\nX-TS-Action: 1\r\n\r\n").find("400 Bad Request") != std::string::npos,
                 "out of range channel");
             Require(Request("GET /api/channels HTTP/1.1\r\nHost: localhost\r\n\r\n").find("\"channels\":[]")!=std::string::npos,"channel API empty list");
             Require(Request("POST /api/scan/start HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n").find("400 Bad Request")!=std::string::npos,"unmarked scan POST accepted");
             Require(Request("POST /api/scan/start?first=2&last=999 HTTP/1.1\r\nHost: localhost\r\nX-TS-Action: 1\r\nContent-Length: 0\r\n\r\n").find("409")!=std::string::npos,"scan range not rejected");
-            http.Stop();
+            Require(Request("GET /api/udp/toggle HTTP/1.1\r\nHost: localhost\r\n\r\n").find("405")!=std::string::npos,"GET control blocked");
+            Require(Request("POST /api/config/quality HTTP/1.1\r\nHost: localhost\r\nX-TS-Action: 1\r\nContent-Length: 99999999\r\n\r\n").find("413")!=std::string::npos,"large request blocked");
+            auto post=[](const std::string& path,const std::string& body){return Request("POST "+path+" HTTP/1.1\r\nHost: localhost\r\nX-TS-Action: 1\r\nContent-Length: "+std::to_string(body.size())+"\r\n\r\n"+body);};
+            Require(post("/api/udp/enabled","{\"enabled\":true}").find("200 OK")!=std::string::npos,"explicit UDP enabled");
+            Require(post("/api/udp/enabled","{\"enabled\":true}").find("200 OK")!=std::string::npos&&controlledUdp.IsEnabled(),"repeated enabled is idempotent");
+            Require(post("/api/udp/enabled","{\"enabled\":false}").find("200 OK")!=std::string::npos&&!controlledUdp.IsEnabled(),"explicit UDP disabled");
+            Require(post("/api/udp/enabled","{\"enabled\":1}").find("400")!=std::string::npos,"strict enabled type");
+            Require(post("/api/config/quality","{\"networkCachingMs\":1500}").find("200 OK")!=std::string::npos,"quality HTTP save");
+            Require(post("/api/config/quality","{\"networkCachingMs\":-1}").find("400")!=std::string::npos,"quality validation HTTP");
+            auto revision=nlohmann::json::parse(quality.ToJsonString()).at("revision");
+            Require(post("/api/config/quality/applied",nlohmann::json{{"clientId","http-test"},{"revision",revision}}.dump()).find("200 OK")!=std::string::npos,"quality ACK HTTP");
+            Require(Request("GET /api/version HTTP/1.1\r\nHost: localhost\r\n\r\n").find("serverVersion")!=std::string::npos,"version endpoint older DLL supported");
+            http.Stop();std::filesystem::remove(qualityPath);
         }
         WSACleanup();
         std::cout << "PASS: partial sends, JSON, TS overflow/wrap/alignment/reset/stop/fanout\n";

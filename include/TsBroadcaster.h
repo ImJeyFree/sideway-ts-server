@@ -14,6 +14,9 @@
 #include <memory>
 #include <unordered_set>
 #include <bitset>
+#include <thread>
+#include <queue>
+#include <atomic>
 
 /**
  * @class TsSubscriber
@@ -109,3 +112,4 @@ private:
     std::unordered_set<std::shared_ptr<TsSubscriber>> m_subscribers; ///< 활성 구독자 집합
     bool m_active = true;                        ///< 활성 상태 플래그
 };
+

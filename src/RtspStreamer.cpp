@@ -1,4 +1,5 @@
 #include "RtspStreamer.h"
+#include "WireProtocol.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -23,7 +24,7 @@ bool RtspStreamer::Start() {
     }
 
     BOOL reuse = TRUE;
-    setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+    setsockopt(m_listenSocket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
 
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
@@ -44,6 +45,7 @@ bool RtspStreamer::Start() {
         return false;
     }
 
+    {sockaddr_in bound{};int n=sizeof(bound);if(getsockname(m_listenSocket,reinterpret_cast<sockaddr*>(&bound),&n)==0)m_port=ntohs(bound.sin_port);}
     m_running = true;
     m_acceptThread = std::thread(&RtspStreamer::AcceptLoop, this);
 
@@ -51,44 +53,21 @@ bool RtspStreamer::Start() {
     return true;
 }
 
+// 소켓 정리 소유자는 세션 스레드다. 서버 종료는 중단 요청 후 해당 스레드를 회수한다.
+void RtspStreamer::Interrupt(const std::shared_ptr<RtspClientSession>& session) {
+    session->sessionRunning=false;
+    std::lock_guard lock(session->socketMutex);
+    if(session->tcpSocket!=INVALID_SOCKET)shutdown(session->tcpSocket,SD_BOTH);
+}
 void RtspStreamer::Stop() {
-    if (!m_running) return;
-    m_running = false;
-
-    if (m_listenSocket != INVALID_SOCKET) {
-        closesocket(m_listenSocket);
-        m_listenSocket = INVALID_SOCKET;
-    }
-
-    if (m_acceptThread.joinable()) {
-        m_acceptThread.join();
-    }
-
-    // 모든 활성 세션 종료
-    {
-        std::lock_guard<std::mutex> lock(m_sessionsMutex);
-        for (auto& session : m_sessions) {
-            session->sessionRunning = false;
-            if (session->tcpSocket != INVALID_SOCKET) {
-                closesocket(session->tcpSocket);
-                session->tcpSocket = INVALID_SOCKET;
-            }
-            if (session->udpSocket != INVALID_SOCKET) {
-                closesocket(session->udpSocket);
-                session->udpSocket = INVALID_SOCKET;
-            }
-            if (session->streamThread.joinable()) {
-                session->streamThread.join();
-            }
-            if (session->subscriber) {
-                m_broadcaster.RemoveSubscriber(session->subscriber);
-                session->subscriber.reset();
-            }
-        }
-        m_sessions.clear();
-    }
-
-    std::cout << "[RtspStreamer] RTSP 스트리밍 서버 정지" << std::endl;
+    if(!m_running.exchange(false))return;
+    closesocket(m_listenSocket);
+    if(m_acceptThread.joinable())m_acceptThread.join();
+    m_listenSocket=INVALID_SOCKET;
+    std::vector<std::shared_ptr<RtspClientSession>> sessions;
+    {std::lock_guard lock(m_sessionsMutex);sessions.swap(m_sessions);}
+    for(auto& session:sessions)Interrupt(session);
+    for(auto& session:sessions)if(session->handlerThread.joinable())session->handlerThread.join();
 }
 
 size_t RtspStreamer::GetClientCount() const {
@@ -101,133 +80,85 @@ size_t RtspStreamer::GetClientCount() const {
 }
 
 void RtspStreamer::SetEnabled(bool enabled) {
-    m_enabled = enabled;
-    std::cout << "[RtspStreamer] RTSP 송출 상태 변경: " << (enabled ? "ON" : "OFF") << std::endl;
-    if (!enabled) {
-        std::lock_guard<std::mutex> lock(m_sessionsMutex);
-        for (auto& session : m_sessions) {
-            session->isPlaying = false;
-            session->sessionRunning = false;
-            if (session->tcpSocket != INVALID_SOCKET) {
-                shutdown(session->tcpSocket, SD_BOTH);
-            }
-        }
-    }
+    m_enabled=enabled;
+    if(!enabled){std::lock_guard lock(m_sessionsMutex);for(auto& s:m_sessions)Interrupt(s);}
 }
-
 void RtspStreamer::AcceptLoop() {
-    while (m_running) {
-        sockaddr_in clientAddr{};
-        int addrLen = sizeof(clientAddr);
-        SOCKET clientSocket = accept(m_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
-        if (clientSocket == INVALID_SOCKET) {
-            if (!m_running) break;
-            continue;
+    while(m_running) {
+        sockaddr_in addr{};int length=sizeof(addr);
+        SOCKET socket=accept(m_listenSocket,reinterpret_cast<sockaddr*>(&addr),&length);
+        if(socket==INVALID_SOCKET)break;
+        char ip[INET_ADDRSTRLEN]{};inet_ntop(AF_INET,&addr.sin_addr,ip,sizeof(ip));
+        std::lock_guard lock(m_sessionsMutex);
+        // 끝난 스레드를 계속 쌓지 않는다. finished 이후에는 서버 상태에 접근하지 않는다.
+        for(auto it=m_sessions.begin();it!=m_sessions.end();) {
+            if((*it)->finished){(*it)->handlerThread.join();it=m_sessions.erase(it);}else ++it;
         }
-
-        char ipBuf[INET_ADDRSTRLEN]{};
-        inet_ntop(AF_INET, &clientAddr.sin_addr, ipBuf, sizeof(ipBuf));
-        std::string clientIp = ipBuf;
-
-        // 클라이언트별 독립 세션 스레드 실행
-        std::thread([this, clientSocket, clientIp]() {
-            HandleClient(clientSocket, clientIp);
-        }).detach();
+        if(!m_running || m_sessions.size()>=32){closesocket(socket);continue;}
+        auto session=std::make_shared<RtspClientSession>();
+        session->tcpSocket=socket;session->clientIp=ip;session->sessionId=std::to_string(++m_sessionCounter);
+        session->sessionRunning=true;m_sessions.push_back(session);
+        try {session->handlerThread=std::thread(&RtspStreamer::HandleClient,this,session);}
+        catch(...){m_sessions.pop_back();closesocket(socket);}
     }
 }
-
-void RtspStreamer::HandleClient(SOCKET clientSocket, const std::string& clientIp) {
-    auto session = std::make_shared<RtspClientSession>();
-    session->tcpSocket = clientSocket;
-    session->clientIp = clientIp;
-    session->sessionId = std::to_string(++m_sessionCounter);
-
-    // 수신 타임아웃 30초 설정
-    DWORD timeout = 30000;
-    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-
-    // Nagle 알고리즘 비활성화 (지연 최소화) 및 송신 버퍼 2MB 확장
-    int nodelay = 1;
-    setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
-    int sndbuf = 1024 * 1024 * 2;
-    setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&sndbuf), sizeof(sndbuf));
-
-    {
-        std::lock_guard<std::mutex> lock(m_sessionsMutex);
-        m_sessions.push_back(session);
-    }
-
-    std::cout << "[RtspStreamer] 클라이언트 접속 (" << clientIp << ", 세션 " << session->sessionId << ")" << std::endl;
-
-    std::string receiveBuffer;
-    char tempBuf[4096];
-    bool shouldClose = false;
-
-    while (m_running && !shouldClose) {
-        int bytesRead = recv(clientSocket, tempBuf, sizeof(tempBuf) - 1, 0);
-        if (bytesRead <= 0) {
-            break;
-        }
-        tempBuf[bytesRead] = '\0';
-        receiveBuffer.append(tempBuf, bytesRead);
-
-        // RTSP 헤더 구분자 "\r\n\r\n" 감지
-        size_t headerEnd = receiveBuffer.find("\r\n\r\n");
-        while (headerEnd != std::string::npos) {
-            std::string request = receiveBuffer.substr(0, headerEnd + 4);
-            receiveBuffer.erase(0, headerEnd + 4);
-
-            bool startStream = false;
-            std::string response = ProcessRtspRequest(request, session, shouldClose, startStream);
-            if (!response.empty()) {
-                std::lock_guard<std::mutex> lock(session->sendMutex);
-                int sent = send(clientSocket, response.c_str(), static_cast<int>(response.length()), 0);
-                if (sent <= 0) {
-                    shouldClose = true;
-                    break;
+void RtspStreamer::StopStream(const std::shared_ptr<RtspClientSession>& s) {
+    s->isPlaying=false;
+    if(s->subscriber)s->subscriber->Stop();
+    if(s->streamThread.joinable())s->streamThread.join();
+    if(s->subscriber){m_broadcaster.RemoveSubscriber(s->subscriber);s->subscriber.reset();}
+}
+void RtspStreamer::HandleClient(std::shared_ptr<RtspClientSession> session) {
+    const SOCKET socket=session->tcpSocket;
+    DWORD sendTimeout=2000;
+    setsockopt(socket,SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&sendTimeout),sizeof(sendTimeout));
+    int yes=1;setsockopt(socket,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&yes),sizeof(yes));
+    std::string buffer;char bytes[4096];bool close=false;
+    using Clock=std::chrono::steady_clock;
+    auto deadline=Clock::now()+std::chrono::seconds(60);
+    try {
+        while(m_running && session->sessionRunning && !close) {
+            WireProtocol::Message message;auto result=WireProtocol::Extract(buffer,message,true);
+            if(result==WireProtocol::Result::NeedMore) {
+                auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-Clock::now()).count();
+                if(remaining<=0)break;
+                // 막 접속한 유휴 세션에서도 shutdown/recv 경합 때문에 종료가 60초 지연되지 않게 한다.
+                // 소켓 닫기만으로 대기를 깨우는 데 의존하지 않고 제한된 간격으로 종료 플래그를 확인한다.
+                fd_set readable;FD_ZERO(&readable);FD_SET(socket,&readable);
+                timeval interval{0,250000};int ready=select(0,&readable,nullptr,nullptr,&interval);
+                if(!m_running || !session->sessionRunning || ready<0)break;
+                if(!ready)continue;
+                int n=recv(socket,bytes,sizeof(bytes),0);if(n<=0)break;
+                if(buffer.empty())deadline=(std::min)(deadline,Clock::now()+std::chrono::seconds(5));
+                buffer.append(bytes,n);continue;
+            }
+            if(result==WireProtocol::Result::Invalid || result==WireProtocol::Result::TooLarge)break;
+            if(result==WireProtocol::Result::Interleaved) {
+                // 길이로 분리한 RTCP만 소비한다. 바이너리를 다음 RTSP 요청에 섞지 않는다.
+                if(!session->setup || message.channel!=session->rtcpChannel || message.body.size()<4 ||
+                   (static_cast<unsigned char>(message.body[0])>>6)!=2)break;
+            } else {
+                if(message.version!="RTSP/1.0")break;
+                std::ostringstream request;request<<message.method<<" "<<message.target<<" "<<message.version<<"\r\n";
+                for(auto& [key,value]:message.headers)request<<key<<": "<<value<<"\r\n";
+                request<<"\r\n";
+                bool play=false;auto response=ProcessRtspRequest(request.str(),session,close,play);
+                {std::lock_guard lock(session->sendMutex);size_t at=0;
+                 while(at<response.size()){int n=send(socket,response.data()+at,int(response.size()-at),0);if(n<=0){close=true;break;}at+=n;}}
+                if(play && !close && !session->isPlaying) {
+                    StopStream(session);
+                    session->subscriber=m_broadcaster.CreateSubscriber();session->isPlaying=true;
+                    session->streamThread=std::thread(&RtspStreamer::StreamLoop,this,session);
                 }
             }
-
-            // PLAY 200 OK 응답이 온전히 전송된 이후에 스트리밍 스레드 가동
-            if (startStream && !session->isPlaying) {
-                session->isPlaying = true;
-                session->subscriber = m_broadcaster.CreateSubscriber(1024 * 1024 * 4); // 4MB 링버퍼
-                session->sessionRunning = true;
-                session->streamThread = std::thread(&RtspStreamer::StreamLoop, this, session);
-            }
-
-            if (shouldClose) break;
-            headerEnd = receiveBuffer.find("\r\n\r\n");
+            deadline=Clock::now()+std::chrono::seconds(buffer.empty()?60:5);
         }
-    }
-
-    // 세션 종료 및 정리
-    session->sessionRunning = false;
-    if (session->udpSocket != INVALID_SOCKET) {
-        closesocket(session->udpSocket);
-        session->udpSocket = INVALID_SOCKET;
-    }
-    if (session->tcpSocket != INVALID_SOCKET) {
-        closesocket(session->tcpSocket);
-        session->tcpSocket = INVALID_SOCKET;
-    }
-    if (session->streamThread.joinable()) {
-        session->streamThread.join();
-    }
-    if (session->subscriber) {
-        m_broadcaster.RemoveSubscriber(session->subscriber);
-        session->subscriber.reset();
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(m_sessionsMutex);
-        auto it = std::find(m_sessions.begin(), m_sessions.end(), session);
-        if (it != m_sessions.end()) {
-            m_sessions.erase(it);
-        }
-    }
-
-    std::cout << "[RtspStreamer] 클라이언트 접속 해제 (" << clientIp << ", 세션 " << session->sessionId << ")" << std::endl;
+    }catch(...){/* 세션 오류를 서버 전체 종료로 전파하지 않는다. */}
+    Interrupt(session);StopStream(session);
+    {std::lock_guard lock(session->socketMutex);closesocket(session->tcpSocket);session->tcpSocket=INVALID_SOCKET;}
+    if(session->udpSocket!=INVALID_SOCKET)closesocket(session->udpSocket);
+    if(session->rtcpSocket!=INVALID_SOCKET)closesocket(session->rtcpSocket);
+    session->finished=true;
 }
 
 std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
@@ -277,6 +208,10 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
     }
 
     std::ostringstream response;
+    auto error=[&](int code,const char* text){return "RTSP/1.0 "+std::to_string(code)+" "+text+"\r\nCSeq: "+cseq+"\r\n\r\n";};
+    if((method=="PLAY"||method=="PAUSE"||method=="TEARDOWN"||method=="GET_PARAMETER"||method=="SET_PARAMETER") &&
+       (!session->setup || sessionHeader.substr(0,sessionHeader.find(';'))!=session->sessionId))return error(454,"Session Not Found");
+    if(method=="SETUP" && session->isPlaying)return error(455,"Method Not Valid in This State");
 
     if (!m_enabled.load()) {
         response << "RTSP/1.0 503 Service Unavailable\r\n"
@@ -311,14 +246,19 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
                  << sdpBody;
     }
     else if (method == "SETUP") {
+        StopStream(session);session->setup=false;
+        if(session->udpSocket!=INVALID_SOCKET){closesocket(session->udpSocket);session->udpSocket=INVALID_SOCKET;}
+        if(session->rtcpSocket!=INVALID_SOCKET){closesocket(session->rtcpSocket);session->rtcpSocket=INVALID_SOCKET;}
         std::string responseTransport;
 
         // TCP Interleaved 모드 감지 (예: RTP/AVP/TCP;unicast;interleaved=0-1)
         if (transport.find("TCP") != std::string::npos || transport.find("interleaved") != std::string::npos) {
             session->transportMode = TransportMode::TCP_INTERLEAVED;
-            session->rtpChannel = 0;
-            session->rtcpChannel = 1;
-            responseTransport = "RTP/AVP/TCP;unicast;interleaved=0-1;ssrc=87654321";
+            unsigned rtp=0,rtcp=1;auto at=transport.find("interleaved=");
+            if(at!=std::string::npos && sscanf_s(transport.c_str()+at+12,"%u-%u",&rtp,&rtcp)!=2)return error(461,"Unsupported Transport");
+            if(rtp>255||rtcp>255||rtp==rtcp)return error(461,"Unsupported Transport");
+            session->rtpChannel=uint8_t(rtp);session->rtcpChannel=uint8_t(rtcp);
+            responseTransport="RTP/AVP/TCP;unicast;interleaved="+std::to_string(rtp)+"-"+std::to_string(rtcp)+";ssrc=87654321";
         }
         else {
             // UDP Unicast 모드 (예: RTP/AVP;unicast;client_port=50000-50001)
@@ -328,20 +268,23 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
             if (cpPos != std::string::npos) {
                 sscanf_s(transport.c_str() + cpPos + 12, "%d-%d", &clientRtp, &clientRtcp);
             }
-            if (clientRtp == 0) clientRtp = 50000;
-            if (clientRtcp == 0) clientRtcp = clientRtp + 1;
+            if(clientRtp<1||clientRtp>65535||clientRtcp<1||clientRtcp>65535||clientRtp==clientRtcp || transport.find("multicast")!=std::string::npos)return error(461,"Unsupported Transport");
 
             session->clientRtpPort = clientRtp;
             session->clientRtcpPort = clientRtcp;
-            session->serverRtpPort = 60000;
-
-            // 클라이언트 대상 UDP 소켓 준비
-            if (session->udpSocket != INVALID_SOCKET) {
-                closesocket(session->udpSocket);
+            // 실제 사용 가능한 연속 RTP/RTCP 포트를 확보한 뒤 응답한다.
+            for(int attempt=0;attempt<64;++attempt){
+                SOCKET rtp=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP),rtcp=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
+                sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(INADDR_ANY);
+                int len=sizeof(local);bool ok=rtp!=INVALID_SOCKET&&rtcp!=INVALID_SOCKET;
+                if(ok)ok=bind(rtp,reinterpret_cast<sockaddr*>(&local),sizeof(local))==0 && getsockname(rtp,reinterpret_cast<sockaddr*>(&local),&len)==0;
+                int port=ntohs(local.sin_port);
+                if(ok && port<65535 && !(port&1)){local.sin_port=htons(static_cast<u_short>(port+1));ok=bind(rtcp,reinterpret_cast<sockaddr*>(&local),sizeof(local))==0;}else ok=false;
+                if(ok){session->udpSocket=rtp;session->rtcpSocket=rtcp;session->serverRtpPort=port;session->serverRtcpPort=port+1;break;}
+                if(rtp!=INVALID_SOCKET)closesocket(rtp);if(rtcp!=INVALID_SOCKET)closesocket(rtcp);
             }
-            session->udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-            int sndbuf = 1024 * 512;
-            setsockopt(session->udpSocket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&sndbuf), sizeof(sndbuf));
+            if(session->udpSocket==INVALID_SOCKET)return error(500,"UDP Bind Failed");
+            u_long nonblocking=1;ioctlsocket(session->rtcpSocket,FIONBIO,&nonblocking);
 
             std::memset(&session->clientRtpAddr, 0, sizeof(session->clientRtpAddr));
             session->clientRtpAddr.sin_family = AF_INET;
@@ -350,10 +293,11 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
 
             std::ostringstream ts;
             ts << "RTP/AVP;unicast;client_port=" << clientRtp << "-" << clientRtcp
-               << ";server_port=60000-60001;ssrc=87654321";
+               << ";server_port=" << session->serverRtpPort << "-" << session->serverRtcpPort << ";ssrc=87654321";
             responseTransport = ts.str();
         }
 
+        session->setup=true;
         response << "RTSP/1.0 200 OK\r\n"
                  << "CSeq: " << cseq << "\r\n"
                  << "Transport: " << responseTransport << "\r\n"
@@ -366,10 +310,10 @@ std::string RtspStreamer::ProcessRtspRequest(const std::string& request,
                  << "CSeq: " << cseq << "\r\n"
                  << "Session: " << session->sessionId << "\r\n"
                  << "Range: npt=0.000-\r\n"
-                 << "RTP-Info: url=" << url << "/track0;seq=0;rtptime=0\r\n\r\n";
+                 << "\r\n";
     }
     else if (method == "PAUSE") {
-        session->isPlaying = false;
+        StopStream(session);
         response << "RTSP/1.0 200 OK\r\n"
                  << "CSeq: " << cseq << "\r\n"
                  << "Session: " << session->sessionId << "\r\n\r\n";
@@ -400,14 +344,17 @@ void RtspStreamer::StreamLoop(std::shared_ptr<RtspClientSession> session) {
     std::vector<uint8_t> tsPayload(UDP_DATAGRAM_SIZE);
     std::vector<uint8_t> tcpFrame(4 + RTP_DATAGRAM_SIZE);
 
-    auto startTime = std::chrono::steady_clock::now();
+
 
     while (m_running && m_enabled.load() && session->sessionRunning && session->isPlaying) {
-        if (!session->subscriber || !session->subscriber->PopData(tsPayload.data(), UDP_DATAGRAM_SIZE)) {
+        if (!session->subscriber || !session->subscriber->PopData(tsPayload.data(), UDP_DATAGRAM_SIZE,100)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
+        if(!session->isPlaying || !session->sessionRunning)break;
+        // RTCP 수신 버퍼를 제한된 횟수로 소비한다. 송신자 보고서는 별도 확장 대상이다.
+        if(session->rtcpSocket!=INVALID_SOCKET){char report[2048];for(int i=0;i<8;++i)if(recv(session->rtcpSocket,report,sizeof(report),0)<=0)break;}
         // 1. RFC 3550 RTP 헤더 구성
         rtpPacket[0] = 0x80; // V=2, P=0, X=0, CC=0
         rtpPacket[1] = RTP_PAYLOAD_TYPE_MP2T & 0x7F; // PT=33
@@ -417,7 +364,7 @@ void RtspStreamer::StreamLoop(std::shared_ptr<RtspClientSession> session) {
 
         // 실시간 90kHz MPEG 클럭 타임스탬프 계산 (지터 및 누적 오차 원천 차단)
         auto now = std::chrono::steady_clock::now();
-        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - startTime).count();
+        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
         uint32_t currentTs = static_cast<uint32_t>((elapsedUs * 90) / 1000);
         uint32_t ts = htonl(currentTs);
         std::memcpy(&rtpPacket[4], &ts, sizeof(ts));
@@ -465,4 +412,5 @@ void RtspStreamer::StreamLoop(std::shared_ptr<RtspClientSession> session) {
             }
         }
     }
+    session->isPlaying=false;
 }

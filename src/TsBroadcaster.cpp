@@ -118,11 +118,11 @@ void TsBroadcaster::PushData(const uint8_t* data, size_t size) {
 
     std::lock_guard<std::mutex> lock(m_subscribersMutex);
     if (!m_active) return;
-    // 접속된 모든 활성 클라이언트(Subscriber)에게 동시 복제 전달 (1:N Broadcasting)
     for (const auto& subscriber : m_subscribers) {
         subscriber->PushData(data, size);
     }
 }
+
 void TsBroadcaster::Stop() {
     std::lock_guard<std::mutex> lock(m_subscribersMutex);
     m_active = false;
@@ -143,3 +143,4 @@ size_t TsBroadcaster::GetSubscriberCount() {
     std::lock_guard<std::mutex> lock(m_subscribersMutex);
     return m_subscribers.size();
 }
+

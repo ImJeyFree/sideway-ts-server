@@ -53,7 +53,13 @@ private:
         uint8_t rtpChannel = 0;
         uint8_t rtcpChannel = 1;
         std::string sessionId;
-        bool isPlaying = false;
+        std::atomic<bool> isPlaying{false};
+        bool setup = false;
+        SOCKET rtcpSocket = INVALID_SOCKET;
+        int serverRtcpPort = 0;
+        std::thread handlerThread;
+        std::atomic<bool> finished{false};
+        std::mutex socketMutex;
         uint16_t seqNumber = 0;
         uint32_t timestamp = 0;
         uint32_t ssrc = 0x87654321;
@@ -64,7 +70,9 @@ private:
     };
 
     void AcceptLoop();
-    void HandleClient(SOCKET clientSocket, const std::string& clientIp);
+    void HandleClient(std::shared_ptr<RtspClientSession> session);
+    void StopStream(const std::shared_ptr<RtspClientSession>& session);
+    void Interrupt(const std::shared_ptr<RtspClientSession>& session);
     void StreamLoop(std::shared_ptr<RtspClientSession> session);
 
     // RTSP 프로토콜 파싱 및 응답 생성

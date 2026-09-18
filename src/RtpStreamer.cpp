@@ -131,11 +131,12 @@ void RtpStreamer::StreamLoop() {
             uint16_t seq = htons(m_sequenceNumber++);
             std::memcpy(&rtpPacket[2], &seq, sizeof(seq));
 
-            // Byte 4~7: Timestamp (32비트, MPEG 90kHz 클럭 기준 7 TS 패킷당 약 49 틱 증가)
+            // Byte 4~7: Timestamp (32비트, 실제 송출 단조 시각을 90kHz로 변환)
             // 수신측(VLC 등)에서 지터 버퍼링 및 프레임 디코딩 동기화에 사용
-            uint32_t ts = htonl(m_timestamp);
+            const auto us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            uint32_t ts = htonl(static_cast<uint32_t>((us*90)/1000));
             std::memcpy(&rtpPacket[4], &ts, sizeof(ts));
-            m_timestamp += 49;
+
 
             // Byte 8~11: SSRC (동기화 소스 식별자, 멀티캐스트 세션 내 고유 발신자 구분)
             uint32_t ssrc = htonl(m_ssrc);

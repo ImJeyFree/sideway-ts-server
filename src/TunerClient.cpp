@@ -28,10 +28,15 @@ void STC_CALL TunerClient::OnTs(void* context,const uint8_t* data,uint32_t size)
     try{static_cast<TunerClient*>(context)->hub.PushData(data,size);}catch(...){}
 }
 bool TunerClient::Command(nlohmann::json j) const{
-    const bool ok=commandFn(handle,j.dump().c_str())==STC_OK;
     const auto op=j.value("op",std::string{});
+    bool tuneChanged=false;
+    if(op=="tune"){
+        const auto before=Query("status");
+        tuneChanged=before.value("currentChannel",0)!=j.value("channel",0) || before.value("isClearQam",false)!=j.value("qam",false);
+    }
+    const bool ok=commandFn(handle,j.dump().c_str())==STC_OK;
     // 방송 전환 명령이 성공하면 공개 송출 버퍼에 남아 있는 이전 방송 데이터를 비운다.
-    if(ok && (op=="select" || op=="restore" || op=="scan" || op=="stop"))hub.Reset();
+    if(ok && (op=="select" || op=="restore" || op=="scan" || op=="stop" || tuneChanged))hub.Reset();
     return ok;
 }
 nlohmann::json TunerClient::Query(const char* kind) const {

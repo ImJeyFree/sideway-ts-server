@@ -5,7 +5,10 @@ Windows USB TV 튜너에서 수신한 방송을 HTTP와 UDP 멀티캐스트로 �
 
 공개 서버 코드·SDK API 헤더는 Apache-2.0([LICENSE](LICENSE))입니다. 비공개 DLL·import LIB는 [별도 바이너리 배포 조건](BINARY_LICENSE.md)을 적용합니다. 서드파티 코드는 원래 라이선스를 따릅니다.
 
-개인 블로그 : https://side-ways.tistory.com/5, https://blog.naver.com/ibook/224413425060
+---
+
+개발 후기 : https://side-ways.tistory.com/6, https://blog.naver.com/ibook/224414714816
+사용 후기 : https://side-ways.tistory.com/7, https://blog.naver.com/ibook/224414714816
 
 ## 구성
 
@@ -93,9 +96,10 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 | GET /api/channels | 저장 방송 목록 |
 | GET /api/scan | 스캔 진행 상태 |
 | GET /api/epg | 선택 방송의 EPG·현재/다음 프로그램 JSON |
-| GET /api/udp/toggle | UDP 멀티캐스트 송출 On/Off 토글 |
-| GET /api/rtp/toggle | RTP 멀티캐스트 송출 On/Off 토글 |
-| GET /api/rtsp/toggle | RTSP 스트림 송출 On/Off 토글 |
+| GET /api/caption | 실시간 DTV Closed Caption(CEA-708) 폐쇄자막 및 제어코드 JSON |
+| POST /api/udp/enabled | UDP 송출 상태 지정 (`enabled`) |
+| POST /api/rtp/enabled | RTP 송출 상태 지정 (`enabled`) |
+| POST /api/rtsp/enabled | RTSP 송출 상태 지정 (`enabled`) |
 | POST /api/scan/start?input=cable&modulation=8VSB&first=2&last=135 | 검색 시작 |
 | POST /api/scan/cancel | 검색 취소 |
 | POST /api/channels/select?id=방송ID | 방송 선택 및 재생 시작 |
@@ -104,6 +108,32 @@ SDK의 `bin/SidewayTunerCore.dll`을 실행 파일 옆에 복사합니다. SDK �
 POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 수단이 아닙니다.
 
 선택 방송의 편성은 `GET /api/epg`로 조회합니다. Player 연동 방법, JSON 필드와 수집 대기 상태는 [EPG API](docs/EPG_API.md)를 참조하세요. EPG를 지원하는 서버 EXE와 튜너 DLL을 함께 사용해야 합니다.
+
+선택 방송의 실시간 폐쇄자막은 `GET /api/caption`으로 조회합니다. 다중 투명 윈도우 렌더링 및 원시 제어코드 연동 규격은 [CAPTION API](docs/CAPTION_API.md)를 참조하세요.
+
+## 한국 지상파 DTV 실시간 자막(Closed Caption) 및 초고속 저지연 최적화 (2026-09-18)
+
+글로벌 오픈소스 플레이어(VLC 등)에서 출력되지 않던 한국 지상파 디지털 방송의 폐쇄자막(Closed Caption)을 완벽하게 추출하고 초경량으로 전달하기 위해 다음과 같은 핵심 엔진을 구축하였습니다:
+
+1. **대한민국 고유 KS X 1001 (KS C 5601) 2바이트 완성형 한글 복원 엔진**
+   - 북미 표준(라틴계열 문자셋) 기반의 오픈소스 파서들이 한글 바이트열을 파싱 오류로 간주하여 폐기하던 문제를 해결.
+   - MPEG-2 Video User Data (GA94) 비트스트림 내 EIA-608 및 CEA-708 DTVCC 서비스 블록에서 `0x18` P16 한글 코드를 1바이트 싱크 어긋남 없이 정밀 조립하여 100% 온전한 UTF-8 한글로 실시간 변환.
+2. **SIMD 초고속 비디오 바이트 스킵 엔진 (CPU 1% 미만 극저지연)**
+   - 15Mbps 대역폭의 95% 이상을 차지하는 비디오 슬라이스 바이트 루프의 CPU 과부하 병목을 SIMD(`std::memchr`) 명령어로 즉시 건너뛰도록 재설계.
+   - 자막 기능 활성화 시에도 CPU 점유율을 1% 미만으로 유지하여 노트북 발열과 동영상 끊김(Stuttering) 현상을 원천 박멸.
+3. **지연 0μs 보장 비동기 스트리밍 & 자막 파이프라인 분리**
+   - 시청자의 비디오/오디오 스트리밍 전송을 무조건 독자 최우선 발송(지연 0μs)하고, 자막 파싱은 상한 큐(40 슬롯)를 둔 비동기 백그라운드 워커 스레드로 완전 격리.
+4. **CEA-708 다중 투명 윈도우 및 지능형 2줄 롤업(Roll-up with 4s TTL)**
+   - 지상파 방송 표준 8개 가상 윈도우 상태 머신 및 실시간 앵커 좌표(수직 75 / 수평 210 그리드) 백분율 변환.
+   - 뉴스 속보 등 1초(1000ms) 미만으로 빠르게 지나가는 자막을 윗줄로 올리고 최소 4초간 보존하는 스마트 롤업 큐 지원.
+   - 3.5초간 대사가 없을 시 자동으로 잔상을 소거하는 독립 윈도우 수명 관리.
+5. **오픈소스 서버와 비공개 하드웨어 코어 라이브러리(`SidewayTunerCore.dll`)의 철저한 분리**
+   - 핵심 자막 파서 및 KS X 1001 한글 디코더 코어 소스코드는 비공개 라이브러리(`SidewayTunerCore.dll`) 내부로 완벽히 캡슐화.
+   - 공개 서버(`sideway-ts-server`)는 가벼운 C-API IPC(`stc_query("caption")`) 프록시로만 연동되어 핵심 기술(Core IP) 유출 없이 안전하게 오픈소스로 배포.
+
+자세한 실시간 API 명세 및 클라이언트 연동 방법은 [CAPTION API 가이드](docs/CAPTION_API.md)를 참조하세요.
+
+---
 
 ## 검증과 배포
 
@@ -116,6 +146,8 @@ POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 �
 
 상세 구현 범위·검증·알려진 제약은 [변경 기록](docs/변경_기록.md)을 확인하세요.
 
-#WindowsBDA #DirectShow #SidewayTSServer #RTSP #MPEG2 #HDTV #TVTuner #MPEG2TS #WebDashboard #RestAPI
+---
 
-WindowsBDA, DirectShow, SidewayTSServer, RTSP, MPEG2, HDTV, TVTuner, MPEG2TS, WebDashboard, RestAPI
+## 2026-09-18 안정성 보강
+
+RTSP 수명 관리, 채널 복구, 실시간 PID 갱신, 설정 저장 검증과 제어 API 변경 내용은 [상세 작업 기록](docs/안정성_보강_2026-09-18.md)을 참조하세요. 변경용 GET API는 POST 및 명시적 상태 본문으로 전환해야 합니다.

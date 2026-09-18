@@ -105,17 +105,11 @@ private:
     /** @brief GET /api/status (서버 상태 및 튜너 신호 정보 JSON) API 핸들러 */
     void HandleStatusApi(SOCKET clientSocket);
 
+    /** @brief GET /api/caption (지상파 ATSC 실시간 자막 JSON) API 핸들러 */
+    void HandleCaptionApi(SOCKET clientSocket);
+
     /** @brief POST /api/tune (채널 변경 요청) API 핸들러 */
     void HandleTuneApi(SOCKET clientSocket, const std::string& request);
-
-    /** @brief POST /api/udp/toggle (UDP 송출 On/Off) API 핸들러 */
-    void HandleUdpToggleApi(SOCKET clientSocket, const std::string& request);
-
-    /** @brief POST /api/rtp/toggle (RTP 송출 On/Off) API 핸들러 */
-    void HandleRtpToggleApi(SOCKET clientSocket, const std::string& request);
-
-    /** @brief POST /api/rtsp/toggle (RTSP 송출 On/Off) API 핸들러 */
-    void HandleRtspToggleApi(SOCKET clientSocket, const std::string& request);
 
     /** @brief GET /api/config/quality (품질 설정 조회) API 핸들러 */
     void HandleGetQualityApi(SOCKET clientSocket);

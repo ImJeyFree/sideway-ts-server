@@ -55,6 +55,5 @@ private:
 
     // RFC 3550 RTP 헤더 필드
     uint16_t m_sequenceNumber{0};       // 16비트 패킷 시퀀스 번호 (단조 증가)
-    uint32_t m_timestamp{0};            // 32비트 90kHz MPEG 타임스탬프
     uint32_t m_ssrc{0x12345678};        // 32비트 동기화 소스 식별자 (SSRC)
 };

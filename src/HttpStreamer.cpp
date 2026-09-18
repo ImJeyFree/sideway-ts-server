@@ -5,6 +5,7 @@
 #include "ScanClient.h"
 #include "QualityConfig.h"
 #include "WebDashboard.h"
+#include "WireProtocol.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -60,7 +61,7 @@ static std::string LanAddress(int port) {
 static void SendError(SOCKET socket, int status, const std::string& message) {
     const std::string body = "{\"success\":false,\"error\":\"" + HttpWire::JsonEscape(message) + "\"}";
     SendSocket(socket, "HTTP/1.1 " + std::to_string(status) +
-        (status == 400 ? " Bad Request\r\n" : " Service Unavailable\r\n") +
+        (status == 400 ? " Bad Request\r\n" : status == 405 ? " Method Not Allowed\r\n" : status == 413 ? " Payload Too Large\r\n" : status == 408 ? " Request Timeout\r\n" : status == 409 ? " Conflict\r\n" : status == 500 ? " Internal Server Error\r\n" : " Service Unavailable\r\n") +
         "Content-Type: application/json; charset=UTF-8\r\nConnection: close\r\nContent-Length: " +
         std::to_string(body.size()) + "\r\n\r\n" + body);
 }
@@ -184,30 +185,72 @@ void HttpStreamer::AcceptLoop() {
         DWORD timeout = 5000;
         setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
         setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-        { std::lock_guard lock(m_clientsMutex); m_clientSockets.insert(clientSocket); }
-        std::thread([this, clientSocket] {
-            HandleClient(clientSocket);
+        { std::lock_guard lock(m_clientsMutex); if(!m_running || m_clientSockets.size()>=64){closesocket(clientSocket);continue;} m_clientSockets.insert(clientSocket); }
+        try { std::thread([this, clientSocket] {
+            try { HandleClient(clientSocket); } catch(...) { /* 연결 오류를 서버 전체로 전파하지 않는다. */ }
             std::lock_guard lock(m_clientsMutex);
             closesocket(clientSocket);
             m_clientSockets.erase(clientSocket);
             m_clientsCv.notify_all();
-        }).detach();
+        }).detach(); } catch(...) {std::lock_guard lock(m_clientsMutex);closesocket(clientSocket);m_clientSockets.erase(clientSocket);m_clientsCv.notify_all();}
     }
 }
 
 void HttpStreamer::HandleClient(SOCKET clientSocket) {
-    std::string request;
-    char reqBuffer[2048];
-    while (request.find("\r\n\r\n") == std::string::npos && request.size() < 8192) {
-        int received = recv(clientSocket, reqBuffer, sizeof(reqBuffer), 0);
-        if (received <= 0) return;
-        request.append(reqBuffer, received);
+    std::string request;WireProtocol::Message parsed;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    for(;;) {
+        auto result=WireProtocol::Extract(request,parsed);
+        if(result==WireProtocol::Result::Request)break;
+        if(result!=WireProtocol::Result::NeedMore){SendError(clientSocket,result==WireProtocol::Result::TooLarge?413:400,"요청 형식 또는 크기 오류");return;}
+        auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()).count();
+        if(remaining<=0){SendError(clientSocket,408,"요청 수신 시간 초과");return;}
+        DWORD timeout=static_cast<DWORD>(remaining);setsockopt(clientSocket,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&timeout),sizeof(timeout));
+        char bytes[2048];int n=recv(clientSocket,bytes,sizeof(bytes),0);if(n<=0)return;request.append(bytes,n);
     }
-    if (request.find("\r\n\r\n") == std::string::npos) {
-        SendError(clientSocket, 400, "요청 헤더가 너무 큽니다");
+    if((parsed.version!="HTTP/1.1"&&parsed.version!="HTTP/1.0") || parsed.target.empty() || parsed.target.front()!='/') {SendError(clientSocket,400,"요청 행 오류");return;}
+    const std::string firstLine=parsed.method+" "+parsed.target+" "+parsed.version;
+    const auto routePath=parsed.target.substr(0,parsed.target.find('?'));
+    const bool action=parsed.headers.count("x-ts-action") && parsed.headers.at("x-ts-action")=="1";
+    if(parsed.method=="POST" && routePath!="/api/epg" && routePath!="/api/version" && !action){SendError(clientSocket,400,"X-TS-Action: 1 헤더가 필요합니다");return;}
+    const bool control=routePath=="/api/tune" || routePath=="/api/udp/toggle" || routePath=="/api/rtp/toggle" || routePath=="/api/rtsp/toggle" || routePath=="/api/udp/enabled" || routePath=="/api/rtp/enabled" || routePath=="/api/rtsp/enabled";
+    if(control) {
+        if(parsed.method!="POST"){SendError(clientSocket,405,"제어 요청은 POST를 사용하세요");return;}
+        if(routePath=="/api/tune"){HandleTuneApi(clientSocket,firstLine);return;}
+        try {
+            auto j=nlohmann::json::parse(parsed.body);
+            if(!j.is_object() || !j.at("enabled").is_boolean())throw std::runtime_error("enabled 필요");
+            const bool enabled=j.at("enabled").get<bool>();nlohmann::json result={{"success",true}};
+            if(routePath.find("/udp/")!=std::string::npos){if(!m_pUdpStreamer)throw std::runtime_error("UDP 없음");m_pUdpStreamer->SetEnabled(enabled);result["isUdpEnabled"]=m_pUdpStreamer->IsEnabled();}
+            else if(routePath.find("/rtp/")!=std::string::npos){if(!m_pRtpStreamer)throw std::runtime_error("RTP 없음");m_pRtpStreamer->SetEnabled(enabled);result["isRtpEnabled"]=m_pRtpStreamer->IsEnabled();}
+            else {if(!m_pRtspStreamer)throw std::runtime_error("RTSP 없음");m_pRtspStreamer->SetEnabled(enabled);result["isRtspEnabled"]=m_pRtspStreamer->IsEnabled();}
+            SendHttpResponse(clientSocket,"application/json; charset=UTF-8",result.dump());
+        }catch(...){SendError(clientSocket,400,"enabled는 true/false여야 하며 해당 송출기가 필요합니다");}
         return;
     }
-    std::string firstLine = request.substr(0, request.find("\r\n"));
+    if(routePath=="/api/version") {
+        if(parsed.method!="GET"){SendError(clientSocket,405,"GET을 사용하세요");return;}
+        nlohmann::json core=nullptr;try{core=m_tuner.Query("capabilities");}catch(...){}
+        SendHttpResponse(clientSocket,"application/json; charset=UTF-8",nlohmann::json{{"serverVersion","1.3.0"},{"serverBuild",__DATE__ " " __TIME__},
+            {"features",{"epg","explicitStreamControl","qualityAcknowledgement","boundedRequests"}},{"core",core}}.dump());return;
+    }
+    if(routePath=="/api/config/quality/status" || routePath=="/api/config/quality/applied") {
+        if(!m_pQualityStore){SendError(clientSocket,503,"설정 저장소 없음");return;}
+        if(routePath=="/api/config/quality/status" && parsed.method=="GET") {
+            SendHttpResponse(clientSocket,"application/json; charset=UTF-8",m_pQualityStore->ApplicationStatus().dump());return;
+        }
+        if(routePath=="/api/config/quality/applied" && parsed.method=="POST") {
+            try{if(m_pQualityStore->Acknowledge(nlohmann::json::parse(parsed.body))){SendHttpResponse(clientSocket,"application/json","{\"success\":true}");return;}}catch(...){}
+            SendError(clientSocket,409,"최신 revision과 유효한 clientId를 보고하세요");return;
+        }
+        SendError(clientSocket,405,"지원하지 않는 메서드");return;
+    }
+    if(routePath=="/api/config/quality") {
+        if(parsed.method=="GET")HandleGetQualityApi(clientSocket);
+        else if(parsed.method=="POST")HandlePostQualityApi(clientSocket,parsed.body);
+        else SendError(clientSocket,405,"GET 또는 POST를 사용하세요");
+        return;
+    }
     // EPG 조회는 채널을 변경하지 않는다. 선택 직후에는 collecting 상태를 반환한다.
     const auto epgSpace=firstLine.find(' '), epgLastSpace=firstLine.rfind(' ');
     const auto epgTarget=firstLine.substr(epgSpace+1,epgLastSpace-epgSpace-1);
@@ -231,9 +274,7 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
         const auto queryAt=target.find('?');const auto route=target.substr(0,queryAt);
         if(route=="/api/scan" || route=="/api/channels" || route=="/api/scan/start" || route=="/api/scan/cancel" || route=="/api/channels/select" || route=="/api/channels/stop") {
             const bool readOnly=route=="/api/scan" || route=="/api/channels";
-            const bool hasActionHeader = (request.find("X-TS-Action: 1") != std::string::npos) ||
-                                         (request.find("x-ts-action: 1") != std::string::npos) ||
-                                         (request.find("X-Ts-Action: 1") != std::string::npos);
+            const bool hasActionHeader = action;
             if((readOnly && firstLine.rfind("GET ",0)!=0) || (!readOnly && (firstLine.rfind("POST ",0)!=0 || !hasActionHeader))) {
                 SendError(clientSocket,400,"작업 요청 형식 오류");return;
             }
@@ -280,65 +321,19 @@ void HttpStreamer::HandleClient(SOCKET clientSocket) {
     }
 
     // 2. 서버 상태 조회 API (GET /api/status)
-    if (firstLine.find("GET /api/status") != std::string::npos) {
+    if (parsed.method=="GET" && routePath=="/api/status") {
         HandleStatusApi(clientSocket);
         return;
     }
 
-    // 3. 채널 변경 API (GET /api/tune?ch=XX)
-    if (firstLine.find("GET /api/tune") != std::string::npos) {
-        HandleTuneApi(clientSocket, firstLine);
-        return;
-    }
-
-    // 4. UDP 송출 토글 API (GET /api/udp/toggle)
-    if (firstLine.find("GET /api/udp/toggle") != std::string::npos) {
-        HandleUdpToggleApi(clientSocket, firstLine);
-        return;
-    }
-
-    // 4-1. RTP 송출 토글 API (GET /api/rtp/toggle)
-    if (firstLine.find("GET /api/rtp/toggle") != std::string::npos) {
-        HandleRtpToggleApi(clientSocket, firstLine);
-        return;
-    }
-
-    // 4-2. RTSP 송출 토글 API (GET /api/rtsp/toggle)
-    if (firstLine.find("GET /api/rtsp/toggle") != std::string::npos) {
-        HandleRtspToggleApi(clientSocket, firstLine);
-        return;
-    }
-
-    // 4-3. 스트리밍/디코딩 품질 설정 조회 API (GET /api/config/quality)
-    if (firstLine.find("GET /api/config/quality") != std::string::npos) {
-        HandleGetQualityApi(clientSocket);
-        return;
-    }
-
-    // 4-4. 스트리밍/디코딩 품질 설정 저장 API (POST /api/config/quality)
-    if (firstLine.find("POST /api/config/quality") != std::string::npos) {
-        size_t headerEnd = request.find("\r\n\r\n");
-        std::string body = (headerEnd != std::string::npos) ? request.substr(headerEnd + 4) : "";
-        size_t clPos = request.find("Content-Length:");
-        if (clPos == std::string::npos) clPos = request.find("content-length:");
-        if (clPos != std::string::npos) {
-            size_t clEnd = request.find("\r\n", clPos);
-            try {
-                int cl = std::stoi(request.substr(clPos + 15, clEnd - clPos - 15));
-                while (static_cast<int>(body.size()) < cl) {
-                    char buf[1024];
-                    int r = recv(clientSocket, buf, sizeof(buf), 0);
-                    if (r <= 0) break;
-                    body.append(buf, r);
-                }
-            } catch (...) {}
-        }
-        HandlePostQualityApi(clientSocket, body);
+    // 3. 지상파 ATSC 실시간 폐쇄자막(CC) 스냅샷 API (GET /api/caption)
+    if (parsed.method=="GET" && routePath=="/api/caption") {
+        HandleCaptionApi(clientSocket);
         return;
     }
 
     // 5. TS 실시간 스트리밍 (GET /stream?ch=XX)
-    if (firstLine.find("GET /stream") != std::string::npos) {
+    if (parsed.method=="GET" && routePath=="/stream") {
         int ch = m_tuner.GetCurrentChannel();
         bool isClearQam = m_tuner.IsClearQam();
         if (!ParseChannel(firstLine, ch)) {
@@ -365,6 +360,7 @@ void HttpStreamer::SendHttpResponse(SOCKET clientSocket, const std::string& cont
         << "Content-Type: " << contentType << "\r\n"
         << "Content-Length: " << body.size() << "\r\n"
         << "Access-Control-Allow-Origin: *\r\n"
+        << "Cache-Control: no-store\r\n"
         << "Connection: close\r\n\r\n"
         << body;
     std::string response = oss.str();
@@ -372,43 +368,30 @@ void HttpStreamer::SendHttpResponse(SOCKET clientSocket, const std::string& cont
 }
 
 void HttpStreamer::HandleStatusApi(SOCKET clientSocket) {
-    bool udpActive = (m_pUdpStreamer != nullptr) && m_pUdpStreamer->IsEnabled();
-    std::string udpTarget = (m_pUdpStreamer != nullptr) ? m_pUdpStreamer->GetTargetAddress() : "239.255.0.1:1234";
-    bool rtpActive = (m_pRtpStreamer != nullptr) && m_pRtpStreamer->IsEnabled();
-    std::string rtpTarget = (m_pRtpStreamer != nullptr) ? m_pRtpStreamer->GetTargetAddress() : "239.255.0.1:5004";
-    bool rtspActive = (m_pRtspStreamer != nullptr) && m_pRtspStreamer->IsEnabled();
-    int rtspPort = (m_pRtspStreamer != nullptr) ? m_pRtspStreamer->GetPort() : DEFAULT_RTSP_PORT;
+    // DLL 호출 한 번의 스냅샷으로 값 간 시간차를 줄인다.
+    auto status=m_tuner.Query("status");
+    status["serverAddress"]=LanAddress(m_port);
+    status["isBroadcasting"]=status.value("receiving",false);status["isVirtual"]=false;
+    status["activeClients"]=m_activeClients.load();status["rtspClients"]=m_pRtspStreamer?m_pRtspStreamer->GetClientCount():0;
+    status["uptimeSeconds"]=GetUptimeSeconds();
+    status["isUdpEnabled"]=m_pUdpStreamer&&m_pUdpStreamer->IsEnabled();
+    status["udpTarget"]=m_pUdpStreamer?m_pUdpStreamer->GetTargetAddress():"";
+    status["isRtpEnabled"]=m_pRtpStreamer&&m_pRtpStreamer->IsEnabled();
+    status["rtpTarget"]=m_pRtpStreamer?m_pRtpStreamer->GetTargetAddress():"";
+    status["isRtspEnabled"]=m_pRtspStreamer&&m_pRtspStreamer->IsEnabled();
+    status["rtspPort"]=m_pRtspStreamer?m_pRtspStreamer->GetPort():DEFAULT_RTSP_PORT;
+    SendHttpResponse(clientSocket,"application/json; charset=UTF-8",status.dump());
+}
 
-    std::ostringstream json;
-    json << "{"
-         << "\"serverAddress\":\"" << HttpWire::JsonEscape(LanAddress(m_port)) << "\","
-         << "\"isBroadcasting\":" << (m_isBroadcasting ? "true" : "false") << ","
-         << "\"hasHardwareTuner\":" << (m_tuner.HasHardwareTuner() ? "true" : "false") << ","
-         << "\"deviceName\":\"" << HttpWire::JsonEscape(m_tuner.GetDeviceName()) << "\","
-         << "\"hardwareId\":\"" << HttpWire::JsonEscape(m_tuner.GetHardwareId()) << "\","
-         << "\"driverStatus\":\"" << HttpWire::JsonEscape(m_tuner.GetDriverStatus()) << "\","
-         << "\"supportedStandards\":\"" << HttpWire::JsonEscape(m_tuner.GetSupportedStandards()) << "\","
-         << "\"tunerLocked\":" << (m_tuner.IsLocked() ? "true" : "false") << ","
-         << "\"signalStatusAvailable\":" << (m_tuner.IsSignalStatusAvailable() ? "true" : "false") << ","
-         << "\"receiving\":" << (m_tuner.IsReceiving() ? "true" : "false") << ","
-         << "\"hardwareBytes\":" << m_tuner.GetHardwareBytes() << ","
-         << "\"lastSampleAgeMs\":" << m_tuner.GetLastSampleAgeMs() << ","
-         << "\"currentChannel\":" << m_tuner.GetCurrentChannel() << ","
-         << "\"channelName\":\"" << HttpWire::JsonEscape(m_scanner?m_scanner->SelectedName():"CH "+std::to_string(m_tuner.GetCurrentChannel())) << "\","
-         << "\"modulation\":\"" << HttpWire::JsonEscape(m_tuner.GetModulation()) << "\","
-         << "\"isClearQam\":" << (m_tuner.IsClearQam() ? "true" : "false") << ","
-         << "\"isVirtual\":" << (m_tuner.IsVirtualMode() ? "true" : "false") << ","
-         << "\"activeClients\":" << m_activeClients.load() << ","
-         << "\"bitrateMbps\":" << GetCurrentBitrateMbps() << ","
-         << "\"uptimeSeconds\":" << GetUptimeSeconds() << ","
-         << "\"isUdpEnabled\":" << (udpActive ? "true" : "false") << ","
-         << "\"udpTarget\":\"" << udpTarget << "\","
-         << "\"isRtpEnabled\":" << (rtpActive ? "true" : "false") << ","
-         << "\"rtpTarget\":\"" << rtpTarget << "\","
-         << "\"isRtspEnabled\":" << (rtspActive ? "true" : "false") << ","
-         << "\"rtspPort\":" << rtspPort
-         << "}";
-    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
+void HttpStreamer::HandleCaptionApi(SOCKET clientSocket) {
+    try {
+        const auto captionJson = m_tuner.QueryCaption();
+        if (!captionJson.is_null() && !captionJson.empty()) {
+            SendHttpResponse(clientSocket, "application/json; charset=UTF-8", captionJson.dump());
+            return;
+        }
+    } catch (...) {}
+    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", "{\"visible\":false,\"text\":\"\",\"lines\":[],\"windows\":[],\"events\":[]}");
 }
 
 void HttpStreamer::HandleTuneApi(SOCKET clientSocket, const std::string& request) {
@@ -435,42 +418,6 @@ void HttpStreamer::HandleTuneApi(SOCKET clientSocket, const std::string& request
     json << "{\"success\":true,\"tunedChannel\":" << targetCh 
          << ",\"isClearQam\":" << (isClearQam ? "true" : "false")
          << ",\"modulation\":\"" << (isClearQam ? "Clear QAM 256" : "ATSC 8VSB") << "\"}";
-    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
-}
-
-// UDP 멀티캐스트 송출 상태 On/Off 토글 API (GET /api/udp/toggle)
-void HttpStreamer::HandleUdpToggleApi(SOCKET clientSocket, const std::string& request) {
-    bool newState = false;
-    if (m_pUdpStreamer) {
-        newState = !m_pUdpStreamer->IsEnabled();
-        m_pUdpStreamer->SetEnabled(newState);
-    }
-    std::ostringstream json;
-    json << "{\"success\":true,\"isUdpEnabled\":" << (newState ? "true" : "false") << "}";
-    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
-}
-
-// RFC 2250 RTP 멀티캐스트 송출 상태 On/Off 토글 API (GET /api/rtp/toggle)
-void HttpStreamer::HandleRtpToggleApi(SOCKET clientSocket, const std::string& request) {
-    bool newState = false;
-    if (m_pRtpStreamer) {
-        newState = !m_pRtpStreamer->IsEnabled();
-        m_pRtpStreamer->SetEnabled(newState);
-    }
-    std::ostringstream json;
-    json << "{\"success\":true,\"isRtpEnabled\":" << (newState ? "true" : "false") << "}";
-    SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
-}
-
-// RFC 2326 RTSP 1.0 송출 상태 On/Off 토글 API (GET /api/rtsp/toggle)
-void HttpStreamer::HandleRtspToggleApi(SOCKET clientSocket, const std::string& request) {
-    bool newState = false;
-    if (m_pRtspStreamer) {
-        newState = !m_pRtspStreamer->IsEnabled();
-        m_pRtspStreamer->SetEnabled(newState);
-    }
-    std::ostringstream json;
-    json << "{\"success\":true,\"isRtspEnabled\":" << (newState ? "true" : "false") << "}";
     SendHttpResponse(clientSocket, "application/json; charset=UTF-8", json.str());
 }
 

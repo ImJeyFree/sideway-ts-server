@@ -48,6 +48,9 @@ public:
      */
     nlohmann::json Query(const char* kind) const;
 
+    /** @brief 실시간 ATSC 폐쇄자막(CC) 스냅샷 조회 (DLL C-API 호출) */
+    nlohmann::json QueryCaption() const { return Query("caption"); }
+
     /** @brief 튜너 하드웨어 초기화 명령 전송 */
     bool Initialize() { return Command({{"op", "initialize"}}); }
 

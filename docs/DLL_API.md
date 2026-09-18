@@ -14,7 +14,7 @@ DLL은 프로세스 내 모듈이며 보안 격리 경계가 아닙니다. 비�
 | stc_api_version | 지원 API 버전 |
 | stc_create | 옵션·UTF-8 채널 파일 경로·TS 콜백으로 핸들 생성. 장치를 열지는 않음 |
 | stc_command | UTF-8 JSON 명령 실행. 성공 0 |
-| stc_query | status, catalog 또는 epg를 UTF-8 JSON으로 조회 |
+| stc_query | status, catalog, epg 또는 capabilities를 UTF-8 JSON으로 조회 |
 | stc_last_error | 해당 핸들의 마지막 오류. 생성 실패는 동일 스레드에서 null 핸들로 조회 |
 | stc_destroy | 콜백 스레드·스캔·장치를 종료하고 핸들 해제 |
 
@@ -53,3 +53,7 @@ catalog는 channels, selected, scanning, state, message, completed, total, curre
 - 일반 명령·조회는 내부 직렬화됩니다. destroy는 다른 API 호출이 모두 끝난 뒤 단독 호출하며, 반환 후에는 콜백이 발생하지 않습니다.
 - COM 초기화·장치 제어 스레드는 DLL이 소유합니다. DLL을 사용 중인 상태로 FreeLibrary하지 않습니다.
 - 스캔 중 TS 콜백 송출은 중단되며 완료·취소 후 복원됩니다. HTTP·UDP 네트워크 소켓은 공개 서버가 소유합니다.
+
+## 2026-09-18 지원 기능 조회
+
+`capabilities`는 version, build, abiVersion, features를 제공합니다. ABI v1 함수 서명은 유지합니다. 새 기능과 요청 예제는 [안정성 보강 기록](안정성_보강_2026-09-18.md)을 참조하세요.

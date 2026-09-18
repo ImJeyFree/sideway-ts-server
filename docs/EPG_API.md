@@ -179,3 +179,7 @@ Player는 UTC 값을 로컬 시간대로 변환해 표시하세요. ETT 설명�
 - `.lib`는 DLL 연결용 import library입니다. export 구성이 같으면 DLL 구현이 갱신되어도 `.lib` 내용과 수정 시각이 유지될 수 있습니다. EPG 지원 여부는 `.lib` 날짜만으로 판단하지 말고 최신 DLL과 HTTP 응답으로 확인하세요.
 - 공개 서버 빌드: `cmake -S . -B build -A x64`, `cmake --build build --config Release`, `ctest --test-dir build -C Release --output-on-failure`.
 - 공개 빌드는 비공개 코어를 다시 컴파일하지 않습니다. 실제 수신에는 EPG 지원 DLL이 실행 파일과 같은 폴더에 있어야 합니다.
+
+## 테이블 수신 진단
+
+`diagnostics`의 `mgt`, `vct`, `stt`, `eit`, `ett` 각각에 `seen`과 `lastSeenUtc`가 포함됩니다. CRC가 정상인 테이블을 관측했는지 확인하는 값이며 선택 방송 편성 완료를 보장하지 않습니다. 채널 전환 시 초기화합니다.

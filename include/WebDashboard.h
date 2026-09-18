@@ -564,6 +564,7 @@ inline const char* GetDashboardHtml() {
             <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <button class="action-btn" id="btnSaveQuality" onclick="saveQualityConfig()" style="background: #0284c7;">품질 설정 저장</button>
                 <button class="action-btn" id="btnResetQuality" onclick="resetQualityConfig()" style="background: #475569;">기본값 복원</button>
+                <span id="qualityApplyStatus" style="font-size:0.8rem; color:var(--text-secondary)">Player 적용 확인 대기</span>
                 <span id="qualitySaveFeedback" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-green);"></span>
             </div>
         </section>
@@ -746,7 +747,7 @@ inline const char* GetDashboardHtml() {
                 }
             }
 
-            fetch('/api/udp/toggle')
+            fetch('/api/udp/enabled', {method:'POST', headers:{'Content-Type':'application/json','X-TS-Action':'1'}, body:JSON.stringify({enabled:!!btn && btn.classList.contains('on')})})
                 .then(res => { if (!res.ok) throw new Error('서버 요청 실패'); return res.json(); })
                 .then(data => {
                     if (btn && txt) {
@@ -785,7 +786,7 @@ inline const char* GetDashboardHtml() {
                 }
             }
 
-            fetch('/api/rtp/toggle')
+            fetch('/api/rtp/enabled', {method:'POST', headers:{'Content-Type':'application/json','X-TS-Action':'1'}, body:JSON.stringify({enabled:!!btn && btn.classList.contains('on')})})
                 .then(res => { if (!res.ok) throw new Error('서버 요청 실패'); return res.json(); })
                 .then(data => {
                     if (btn && txt) {
@@ -824,7 +825,7 @@ inline const char* GetDashboardHtml() {
                 }
             }
 
-            fetch('/api/rtsp/toggle')
+            fetch('/api/rtsp/enabled', {method:'POST', headers:{'Content-Type':'application/json','X-TS-Action':'1'}, body:JSON.stringify({enabled:!!btn && btn.classList.contains('on')})})
                 .then(res => { if (!res.ok) throw new Error('서버 요청 실패'); return res.json(); })
                 .then(data => {
                     if (btn && txt) {
@@ -1037,7 +1038,7 @@ inline const char* GetDashboardHtml() {
             try {
                 const res = await fetch('/api/config/quality', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-TS-Action': '1' },
                     body: JSON.stringify(payload)
                 });
                 if (!res.ok) throw new Error(await res.text());
@@ -1069,7 +1070,19 @@ inline const char* GetDashboardHtml() {
             await saveQualityConfig();
         }
 
+        async function refreshQualityApplication() {
+            const element=document.getElementById('qualityApplyStatus');
+            try {
+                const res=await fetch('/api/config/quality/status');
+                if(!res.ok)throw new Error('상태 조회 실패');
+                const status=await res.json();
+                const count=(status.clients || []).filter(client=>client.current).length;
+                if(element)element.textContent=`설정 v${status.revision} · 최근 5분 Player 적용 보고 ${count}대`;
+            } catch(error) {if(element)element.textContent='Player 적용 확인 대기';}
+        }
         loadQualityConfig();
+        setInterval(refreshQualityApplication,5000);
+        refreshQualityApplication();
 
         setInterval(refreshChannels, 1000);
         refreshChannels();
