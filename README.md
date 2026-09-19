@@ -156,6 +156,26 @@ RTSP 수명 관리, 채널 복구, 실시간 PID 갱신, 설정 저장 검증과
 
 ---
 
+## 2026-09-19 자막 엔진 고도화 및 장시간 연속 시청 안정성 최적화
+
+지상파 ATSC 폐쇄자막(EIA-608 / CEA-708 DTVCC) 파서의 동기화, 패킷 재조립 및 CPU 연산 효율을 개선하여 **장시간 자막 시청 시에도 화면 끊김(Stuttering)이 전혀 발생하지 않도록** 엔진을 고도화하였습니다:
+
+1. **DTVCC 패킷 조립 완료 후 1회 스냅샷 갱신 (CPU 연산 1/100 격감)**
+   - 매 바이트/제어코드마다 스냅샷을 갱신하던 이전 병목을 제거하고, 패킷 전체 해석이 완료된 후 1회만 화면 스냅샷을 갱신하도록 최적화.
+   - 워커 스레드의 불필요한 뮤텍스 경합을 제거하여 1시간 이상 연속 방송 시청 시에도 비디오 전송 지연 0μs 보장.
+2. **분할 PES 헤더 및 MPEG-2 GA94 `cc_data` 임시 조립 버퍼 탑재**
+   - 188바이트 TS 패킷 경계를 넘어 분할 전송되는 비디오 페이로드 및 GA94 자막 데이터를 `m_videoBuffer`에 결손 없이 온전히 수집 후 완전한 블록만 디코딩.
+   - `continuity_counter` 불연속 시 손상 패킷 즉시 폐기 및 중복 패킷 무시 처리.
+3. **스레드 동기화 단일 Mutex 일원화 및 채널 전환 원자적 초기화**
+   - `ProcessTsPackets`, `Reset`, `GetLatestCaption` 간의 이중 잠금(데드락 위험)을 제거.
+   - `SetProgram` 시 자막 큐와 파서 상태를 원자적으로 초기화하여 채널 전환 직후 이전 채널의 지연 자막이 새 채널을 덮어쓰는 레이스 컨디션 차단.
+4. **회귀 테스트 및 ABI 검증 완료**
+   - Release CTest 3종(`recovery-regressions`, `epg-regressions`, `core-regressions`) 및 `AbiSmoke.py` 자막 JSON 규격 검증 100% 통과.
+
+상세 기술 분석 및 변경 내역은 [AtscCcParser 수정 기록 (2026-09-19)](file:///c:/ws/ts/sideway-tuner-core/CAPTION_FIXES_2026-09-19.md)을 참조하세요.
+
+---
+
 ## 📱 Sideway TS Player 안드로이드 앱 (Android App)
 
 홈 TV 튜너 서버(`sideway-ts-server`)와 연동하여 스마트폰 및 태블릿에서 실시간 지상파 1080i 방송 시청, 원터치 PVR 녹화, DTV Closed Caption 및 AI 실시간 자막을 제공하는 고성능 안드로이드 전용 플레이어입니다.
@@ -193,23 +213,4 @@ RTSP 수명 관리, 채널 복구, 실시간 PID 갱신, 설정 저장 검증과
 
 상세 구현 범위·검증·알려진 제약은 [변경 기록](docs/변경_기록.md)을 확인하세요.
 
-## 2026-09-19 자막 엔진 고도화 및 장시간 연속 시청 안정성 최적화
-
-지상파 ATSC 폐쇄자막(EIA-608 / CEA-708 DTVCC) 파서의 동기화, 패킷 재조립 및 CPU 연산 효율을 개선하여 **장시간 자막 시청 시에도 화면 끊김(Stuttering)이 전혀 발생하지 않도록** 엔진을 고도화하였습니다:
-
-1. **DTVCC 패킷 조립 완료 후 1회 스냅샷 갱신 (CPU 연산 1/100 격감)**
-   - 매 바이트/제어코드마다 스냅샷을 갱신하던 이전 병목을 제거하고, 패킷 전체 해석이 완료된 후 1회만 화면 스냅샷을 갱신하도록 최적화.
-   - 워커 스레드의 불필요한 뮤텍스 경합을 제거하여 1시간 이상 연속 방송 시청 시에도 비디오 전송 지연 0μs 보장.
-2. **분할 PES 헤더 및 MPEG-2 GA94 `cc_data` 임시 조립 버퍼 탑재**
-   - 188바이트 TS 패킷 경계를 넘어 분할 전송되는 비디오 페이로드 및 GA94 자막 데이터를 `m_videoBuffer`에 결손 없이 온전히 수집 후 완전한 블록만 디코딩.
-   - `continuity_counter` 불연속 시 손상 패킷 즉시 폐기 및 중복 패킷 무시 처리.
-3. **스레드 동기화 단일 Mutex 일원화 및 채널 전환 원자적 초기화**
-   - `ProcessTsPackets`, `Reset`, `GetLatestCaption` 간의 이중 잠금(데드락 위험)을 제거.
-   - `SetProgram` 시 자막 큐와 파서 상태를 원자적으로 초기화하여 채널 전환 직후 이전 채널의 지연 자막이 새 채널을 덮어쓰는 레이스 컨디션 차단.
-4. **회귀 테스트 및 ABI 검증 완료**
-   - Release CTest 3종(`recovery-regressions`, `epg-regressions`, `core-regressions`) 및 `AbiSmoke.py` 자막 JSON 규격 검증 100% 통과.
-
-상세 기술 분석 및 변경 내역은 [AtscCcParser 수정 기록 (2026-09-19)](file:///c:/ws/ts/sideway-tuner-core/CAPTION_FIXES_2026-09-19.md)을 참조하세요.
-
 ---
-
