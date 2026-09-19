@@ -148,6 +148,43 @@ POST에는 `X-TS-Action: 1` 헤더가 필요합니다. 이는 사용자 인증 �
 - **별도 아카이브 패키징**: `tools/Prepare-PublicRelease.ps1`을 사용하면 소스·실행·SDK를 버전별 독립 ZIP 아카이브 및 SHA256 해시 목록으로 로컬 패키징할 수 있습니다.
 - **보안 및 라이선스**: 실제 채널 JSON·녹화물·장치 로그·디버그 심볼·비공개 코어 소스는 저장소에 포함되지 않습니다. 바이너리 사용 조건은 [별도 바이너리 배포 조건](BINARY_LICENSE.md) 및 [서드파티 고지](THIRD_PARTY_NOTICES.md)를 따릅니다.
 
+---
+
+## 📱 Sideway TS Player 안드로이드 앱 (Android App)
+
+홈 TV 튜너 서버(`sideway-ts-server`)와 연동하여 스마트폰 및 태블릿에서 실시간 지상파 1080i 방송 시청, 원터치 PVR 녹화, DTV Closed Caption 및 AI 실시간 자막을 제공하는 고성능 안드로이드 전용 플레이어입니다.
+
+### 📺 안드로이드 앱 가로 / 세로 화면
+
+| 가로 모드 (몰입형 16:9 전체화면) | 세로 모드 (16:9 비디오 + 실시간 EPG) |
+| :---: | :---: |
+| ![Sideway TS Player 가로 모드](docs/android_l.png) | ![Sideway TS Player 세로 모드](docs/android_p.png) |
+
+---
+
+## 🧪 Google Play Store 비공개 베타 테스터 참여 안내 (Closed Testing)
+
+안녕하세요! **Sideway TS Player** 프로젝트를 찾아주신 테스터 여러분께 진심으로 감사드립니다.
+
+현재 **Sideway TS Player** 안드로이드 앱의 구글 플레이 스토어 정식 출시를 앞두고, 더욱 안정적이고 완벽한 시청 경험을 제공해 드리기 위하여 **구글 플레이 비공개 베타 테스트(Closed Testing)**를 진행하고 있습니다.
+
+지상파 실시간 TV 시청 및 PVR 녹화 기능을 남들보다 한발 먼저 체험해 보시고 소중한 피드백을 공유해 주실 테스터분들의 많은 참여와 관심을 부탁드립니다.
+
+### 💌 비공개 테스트 참여 방법 (3단계)
+
+1. **Google Groups 테스터 그룹 가입 (필수)**
+   - 아래 구글 그룹스 링크로 이동하여 **`[그룹 가입]`** 버튼을 눌러주세요.  
+   - 🔗 **Google Groups 테스터 신청**: [https://groups.google.com/g/sideway-tv-player](https://groups.google.com/g/sideway-tv-player)
+
+2. **Google Play 테스터 참여 승인**
+   - 구글 그룹스 가입 후 아래 구글 플레이 테스터 참여 웹 링크 접속 시 테스터 참여 승인 및 앱 다운로드가 활성화됩니다.  
+   - 🔗 **Play Store 테스터 참여 링크**: [https://play.google.com/apps/testing/com.sideway.tsplayer](https://play.google.com/apps/testing/com.sideway.tsplayer)
+
+3. **Sideway TS Player 앱 설치 및 피드백**
+   - 구글 플레이 스토어에서 앱을 다운로드하여 사용해 보신 후, 버그 제보 및 기능 개선 아이디어를 [GitHub 이슈 트래커](https://github.com/ImJeyFree/sideway-ts-server/issues)나 구글 그룹스에 편하게 남겨주시면 개발에 적극 반영하겠습니다!
+
+시청해 주시고 프로젝트를 함께 만들어가 주시는 모든 분들께 깊이 감사드립니다. 🙇‍♂️
+
 상세 구현 범위·검증·알려진 제약은 [변경 기록](docs/변경_기록.md)을 확인하세요.
 
 ## 2026-09-19 자막 엔진 고도화 및 장시간 연속 시청 안정성 최적화
