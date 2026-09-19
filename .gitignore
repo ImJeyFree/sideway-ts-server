@@ -2,14 +2,13 @@
 build*/
 out/
 dist/
-docs/
-!docs/PRIVACY_POLICY.md
 .vs/
 sdk/bin/
 sdk/lib/
 CMakeUserPresets.json
 *.md
 !README.md
+!docs/*.md
 *.exe
 *.dll
 *.lib
