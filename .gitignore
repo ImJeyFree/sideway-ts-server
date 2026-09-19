@@ -3,6 +3,7 @@ build*/
 out/
 dist/
 docs/
+!docs/PRIVACY_POLICY.md
 .vs/
 sdk/bin/
 sdk/lib/
