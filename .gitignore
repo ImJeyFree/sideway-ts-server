@@ -9,6 +9,7 @@ CMakeUserPresets.json
 *.md
 !README.md
 !docs/*.md
+!docs/*.png
 *.exe
 *.dll
 *.lib
